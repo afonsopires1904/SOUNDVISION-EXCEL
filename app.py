@@ -10,7 +10,7 @@ st.set_page_config(
 )
 
 st.title("🔊 Soundvision PDF Extractor")
-st.markdown("Upload a Soundvision report PDF and download the **KARA MAINS** data as Excel.")
+st.markdown("Upload a Soundvision report PDF and download the data as Excel.")
 
 uploaded_file = st.file_uploader("Upload your Soundvision PDF", type="pdf")
 
@@ -57,4 +57,4 @@ if uploaded_file:
             st.error(f"❌ Unexpected error: {e}")
 
 st.markdown("---")
-st.caption("Built for internal use · Reads KARA L/R as a single representative array")
+st.caption("Built for internal use ·")
