@@ -8,9 +8,12 @@ st.set_page_config(
     page_icon="🔊",
     layout="centered"
 )
-
-st.title("🔊 Soundvision PDF Extractor")
-st.markdown("Upload a Soundvision report PDF and download the **KARA MAINS** data as Excel.")
+col1, col2 = st.columns([1, 6])
+with col1:
+    st.image("assets/logo.png", width=50)
+with col2:
+    st.title("Soundvision PDF Extractor")
+st.markdown("Upload a Soundvision report PDF and download the data as Excel and PDF File.")
 
 uploaded_file = st.file_uploader("Upload your Soundvision PDF", type="pdf")
 
@@ -75,4 +78,4 @@ if uploaded_file:
             st.error(f"❌ Unexpected error: {e}")
 
 st.markdown("---")
-st.caption("Built for internal use · Reads KARA L/R as a single representative array")
+st.caption("Built for internal use by Afonso Pires ·")
