@@ -9,8 +9,12 @@ st.set_page_config(
     layout="centered"
 )
 
-st.image("assets/lasmall.png", width= 200)
-st.title("Soundvision PDF Extractor")
+col1, col2 = st.columns([1, 4])
+with col1:
+    st.image("assets/logo.png", width=80)
+with col2:
+    st.title("Soundvision PDF Extractor")
+
 st.markdown("Upload a Soundvision report PDF and download the data as Excel.")
 
 uploaded_file = st.file_uploader("Upload your Soundvision PDF", type="pdf")
@@ -58,4 +62,4 @@ if uploaded_file:
             st.error(f"❌ Unexpected error: {e}")
 
 st.markdown("---")
-st.caption("Built for internal use ·")
+st.caption("Built for internal use by Afonso Pires·")
