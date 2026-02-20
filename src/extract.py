@@ -1,5 +1,5 @@
 """
-Soundvision PDF Extractor
+Soundvision PDF Extractor — Generic
 Reads all PDFs from ../data/ and outputs Excel files to ../output/
 
 Usage:
@@ -21,23 +21,22 @@ SRC_DIR    = Path(__file__).parent
 DATA_DIR   = SRC_DIR.parent / "data"
 OUTPUT_DIR = SRC_DIR.parent / "output"
 
-# ── Parsing ───────────────────────────────────────────────────────────────────
+# ── Text extraction ───────────────────────────────────────────────────────────
 
 def extract_text(pdf_path):
     with pdfplumber.open(pdf_path) as pdf:
         return "\n".join(page.extract_text() or "" for page in pdf.pages)
 
 
-def parse_kara_section(text):
-    match = re.search(
-        r"(1\. Source: KARA [LR].*?)(?=2\. Source: KARA|2\. Group:|3\. Group:|$)",
-        text, re.DOTALL
-    )
-    if not match:
-        raise ValueError("Could not locate KARA source block in PDF.")
-    block = match.group(1)
-    source_name = re.search(r"1\. Source: (KARA [LR])", block).group(1)
-    return source_name, block
+# ── Generic document parsing ──────────────────────────────────────────────────
+
+def get_canonical_name(source_name):
+    name = re.sub(r'\s+[LR]\s*(\d*)$', lambda m: (' ' + m.group(1)) if m.group(1) else '', source_name).strip()
+    return name
+
+
+def is_mirror(name):
+    return bool(re.search(r'\s+R(\s+\d+)?$', name))
 
 
 def parse_physical_config(block):
@@ -61,26 +60,117 @@ def parse_physical_config(block):
     config = {}
     for key, pattern in fields.items():
         m = re.search(pattern, block)
-        config[key] = m.group(1).strip() if m else "N/A"
+        if m:
+            config[key] = m.group(1).strip()
     return config
 
 
 def parse_enclosure_table(block):
-    pattern = re.compile(
-        r"#(\d+)\s+(KARA\s+II)\s+([\-\d.]+)\s+([\-\d.]+)\s+([\-\d.]+)\s+([\-\d.]+)\s+([\d/]+)"
-    )
-    return [
-        {
-            "Enclosure #":  int(m.group(1)),
-            "Type":         m.group(2),
-            "Angle (°)":    float(m.group(3)),
-            "Site (°)":     float(m.group(4)),
-            "Top Z (m)":    float(m.group(5)),
-            "Bottom Z (m)": float(m.group(6)),
-            "Panflex":      m.group(7),
+    has_panflex = bool(re.search(r"Panflex", block))
+    has_angles  = bool(re.search(r"Angles \(°\)", block))
+
+    if has_angles and has_panflex:
+        # Line array with Panflex (KARA, K1, K2, K3...)
+        pattern = re.compile(
+            r"#(\d+)\s+([\w\s]+?)\s+([\-\d.]+)\s+([\-\d.]+)\s+([\-\d.]+)\s+([\-\d.]+)\s+([\d/]+)\s*$",
+            re.MULTILINE
+        )
+        rows = []
+        for m in pattern.finditer(block):
+            rows.append({
+                "Enc #":        int(m.group(1)),
+                "Type":         m.group(2).strip(),
+                "Angle (°)":    float(m.group(3)),
+                "Site (°)":     float(m.group(4)),
+                "Top Z (m)":    float(m.group(5)),
+                "Bottom Z (m)": float(m.group(6)),
+                "Panflex":      m.group(7),
+            })
+        return rows, ["Enc #", "Type", "Angle (°)", "Site (°)", "Top Z (m)", "Bottom Z (m)", "Panflex"]
+
+    elif has_angles and not has_panflex:
+        # Line array without Panflex (KIVA, X-Series arrays...)
+        pattern = re.compile(
+            r"#(\d+)\s+([\w\s]+?)\s+([\-\d.]+)\s+([\-\d.]+)\s+([\-\d.]+)\s+([\-\d.]+)\s*$",
+            re.MULTILINE
+        )
+        rows = []
+        for m in pattern.finditer(block):
+            rows.append({
+                "Enc #":        int(m.group(1)),
+                "Type":         m.group(2).strip(),
+                "Angle (°)":    float(m.group(3)),
+                "Site (°)":     float(m.group(4)),
+                "Top Z (m)":    float(m.group(5)),
+                "Bottom Z (m)": float(m.group(6)),
+            })
+        return rows, ["Enc #", "Type", "Angle (°)", "Site (°)", "Top Z (m)", "Bottom Z (m)"]
+
+    else:
+        # Subs / point source (SB28, X8, KS28...)
+        pattern = re.compile(
+            r"#(\d+)\s+([\w]+(?:_C)?)\s+([\-\d.]+)\s+([\-\d.]+)\s+([\-\d.]+)\s*$",
+            re.MULTILINE
+        )
+        rows = []
+        for m in pattern.finditer(block):
+            rows.append({
+                "Enc #":        int(m.group(1)),
+                "Type":         m.group(2).strip(),
+                "Site (°)":     float(m.group(3)),
+                "Top Z (m)":    float(m.group(4)),
+                "Bottom Z (m)": float(m.group(5)),
+            })
+        return rows, ["Enc #", "Type", "Site (°)", "Top Z (m)", "Bottom Z (m)"]
+
+
+def split_source_blocks(text):
+    pattern = re.compile(r"^\d+\.\s+Source:\s+(.+)$", re.MULTILINE)
+    matches = list(pattern.finditer(text))
+    blocks = []
+    for i, m in enumerate(matches):
+        start = m.start()
+        end   = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        blocks.append((m.group(1).strip(), text[start:end]))
+    return blocks
+
+
+def get_group_for_source(text, source_name):
+    pattern = re.compile(rf"\d+\.\s+Source:\s+{re.escape(source_name)}")
+    m = pattern.search(text)
+    if not m:
+        return "Unknown"
+    group_pattern = re.compile(r"^\d+\.\s+Group:\s+(.+)$", re.MULTILINE)
+    groups_before = list(group_pattern.finditer(text, 0, m.start()))
+    if not groups_before:
+        return "Unknown"
+    for g in reversed(groups_before):
+        name = g.group(1).strip()
+        if name.upper() != "ALL":
+            return name
+    return "Unknown"
+
+
+def parse_document(text):
+    source_blocks = split_source_blocks(text)
+    groups = {}
+    for source_name, block in source_blocks:
+        if is_mirror(source_name):
+            continue
+        canonical         = get_canonical_name(source_name)
+        group             = get_group_for_source(text, source_name)
+        physical          = parse_physical_config(block)
+        enclosures, cols  = parse_enclosure_table(block)
+        entry = {
+            "name":       canonical,
+            "physical":   physical,
+            "enclosures": enclosures,
+            "columns":    cols,
         }
-        for m in pattern.finditer(block)
-    ]
+        if group not in groups:
+            groups[group] = []
+        groups[group].append(entry)
+    return groups
 
 
 # ── Styling helpers ───────────────────────────────────────────────────────────
@@ -104,222 +194,185 @@ LEFT         = Alignment(horizontal="left",   vertical="center")
 
 # ── Excel writing ─────────────────────────────────────────────────────────────
 
-def write_excel(source_name, physical, enclosures, output_path):
+def write_excel(groups, output_path):
     wb = Workbook()
-    ws = wb.active
-    ws.title = "KARA MAINS"
-    ws.sheet_view.showGridLines = False
+    wb.remove(wb.active)
 
-    row = 1
+    for group_name, sources in groups.items():
+        sheet_name = re.sub(r'[\\/*?:\[\]]', '', group_name)[:31]
+        ws = wb.create_sheet(title=sheet_name)
+        ws.sheet_view.showGridLines = False
+        row = 1
 
-    # Title
-    ws.merge_cells(f"A{row}:F{row}")
-    c = ws[f"A{row}"]
-    c.value = f"Soundvision Report — KARA MAINS"
-    c.font = HEADER_FONT
-    c.fill = HEADER_FILL
-    c.alignment = CENTER
-    ws.row_dimensions[row].height = 28
-    row += 2
+        ws.merge_cells(f"A{row}:G{row}")
+        c = ws[f"A{row}"]
+        c.value = f"Group: {group_name}"
+        c.font = Font(name="Arial", bold=True, color="FFFFFF", size=14)
+        c.fill = HEADER_FILL; c.alignment = CENTER
+        ws.row_dimensions[row].height = 30
+        row += 2
 
-    # Physical config section header
-    ws.merge_cells(f"A{row}:F{row}")
-    c = ws[f"A{row}"]
-    c.value = "Physical Configuration"
-    c.font = SUBHEAD_FONT
-    c.fill = SUBHEAD_FILL
-    c.alignment = LEFT
-    ws.row_dimensions[row].height = 20
-    row += 1
+        for source in sources:
+            ws.merge_cells(f"A{row}:G{row}")
+            c = ws[f"A{row}"]
+            c.value = source["name"]
+            c.font = Font(name="Arial", bold=True, color="FFFFFF", size=11)
+            c.fill = SUBHEAD_FILL; c.alignment = LEFT
+            ws.row_dimensions[row].height = 22
+            row += 1
 
-    # Key-value pairs in two columns
-    items = list(physical.items())
-    for i in range(0, len(items), 2):
-        fill = ALT_FILL if (row % 2 == 0) else WHITE_FILL
-        for offset, idx in enumerate([i, i + 1]):
-            if idx >= len(items):
-                break
-            key, val = items[idx]
-            col_label = offset * 3 + 1
+            physical = source["physical"]
+            if physical:
+                items = list(physical.items())
+                for i in range(0, len(items), 2):
+                    fill = ALT_FILL if (row % 2 == 0) else WHITE_FILL
+                    for offset, idx in enumerate([i, i + 1]):
+                        if idx >= len(items):
+                            break
+                        key, val = items[idx]
+                        col_label = offset * 3 + 1
+                        lc = ws.cell(row=row, column=col_label, value=key)
+                        lc.font = LABEL_FONT; lc.alignment = LEFT
+                        lc.fill = fill; lc.border = thin_border()
+                        vc = ws.cell(row=row, column=col_label + 1, value=val)
+                        vc.font = BODY_FONT; vc.alignment = LEFT
+                        vc.fill = fill; vc.border = thin_border()
+                        ws.merge_cells(start_row=row, start_column=col_label + 1,
+                                       end_row=row, end_column=col_label + 2)
+                    row += 1
+                row += 1
 
-            lc = ws.cell(row=row, column=col_label, value=key)
-            lc.font = LABEL_FONT
-            lc.alignment = LEFT
-            lc.fill = fill
-            lc.border = thin_border()
+            enclosures = source["enclosures"]
+            columns    = source["columns"]
+            if enclosures:
+                ws.merge_cells(f"A{row}:G{row}")
+                c = ws[f"A{row}"]
+                c.value = "Per-Enclosure Geometry"
+                c.font = Font(name="Arial", bold=True, color="1F3864", size=9)
+                c.fill = ALT_FILL; c.alignment = LEFT
+                ws.row_dimensions[row].height = 15
+                row += 1
 
-            vc = ws.cell(row=row, column=col_label + 1, value=val)
-            vc.font = BODY_FONT
-            vc.alignment = LEFT
-            vc.fill = fill
-            vc.border = thin_border()
+                for col, h in enumerate(columns, 1):
+                    c = ws.cell(row=row, column=col, value=h)
+                    c.font = Font(name="Arial", bold=True, color="FFFFFF", size=9)
+                    c.fill = ROW_FILL; c.alignment = CENTER; c.border = thin_border()
+                ws.row_dimensions[row].height = 15
+                row += 1
 
-            ws.merge_cells(start_row=row, start_column=col_label + 1,
-                           end_row=row, end_column=col_label + 2)
-        row += 1
+                for enc in enclosures:
+                    fill = ALT_FILL if enc["Enc #"] % 2 == 0 else WHITE_FILL
+                    for col, key in enumerate(columns, 1):
+                        c = ws.cell(row=row, column=col, value=enc.get(key, ""))
+                        c.font = BODY_FONT; c.alignment = CENTER
+                        c.fill = fill; c.border = thin_border()
+                    row += 1
 
-    row += 1  # spacer
+            row += 2
 
-    # Enclosure geometry section header
-    ws.merge_cells(f"A{row}:G{row}")
-    c = ws[f"A{row}"]
-    c.value = "Per-Enclosure Geometry"
-    c.font = SUBHEAD_FONT
-    c.fill = SUBHEAD_FILL
-    c.alignment = LEFT
-    ws.row_dimensions[row].height = 20
-    row += 1
-
-    # Table headers
-    headers = ["Enclosure #", "Type", "Angle (°)", "Site (°)",
-               "Top Z (m)", "Bottom Z (m)", "Panflex"]
-    for col, h in enumerate(headers, 1):
-        c = ws.cell(row=row, column=col, value=h)
-        c.font = Font(name="Arial", bold=True, color="FFFFFF", size=10)
-        c.fill = ROW_FILL
-        c.alignment = CENTER
-        c.border = thin_border()
-    ws.row_dimensions[row].height = 18
-    row += 1
-
-    # Enclosure rows
-    for enc in enclosures:
-        fill = ALT_FILL if enc["Enclosure #"] % 2 == 0 else WHITE_FILL
-        for col, key in enumerate(headers, 1):
-            c = ws.cell(row=row, column=col, value=enc[key])
-            c.font = BODY_FONT
-            c.alignment = CENTER
-            c.fill = fill
-            c.border = thin_border()
-        row += 1
-
-    # Column widths
-    for col, width in zip("ABCDEFG", [20, 16, 4, 20, 16, 4, 10]):
-        ws.column_dimensions[col].width = width
+        for col, width in zip("ABCDEFG", [22, 18, 4, 22, 18, 4, 12]):
+            ws.column_dimensions[col].width = width
 
     wb.save(output_path)
 
 
 # ── PDF writing ───────────────────────────────────────────────────────────────
 
-def write_pdf(source_name, physical, enclosures, output_path):
+def write_pdf(groups, output_path):
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.units import mm
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_LEFT, TA_CENTER
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_LEFT
 
-    doc = SimpleDocTemplate(
-        str(output_path),
-        pagesize=A4,
-        leftMargin=20*mm, rightMargin=20*mm,
-        topMargin=20*mm, bottomMargin=20*mm
-    )
+    doc = SimpleDocTemplate(str(output_path), pagesize=A4,
+                            leftMargin=20*mm, rightMargin=20*mm,
+                            topMargin=20*mm, bottomMargin=20*mm)
 
-    NAVY   = colors.HexColor("#1F3864")
-    BLUE   = colors.HexColor("#2E75B6")
-    LBLUE  = colors.HexColor("#DCE6F1")
-    WHITE  = colors.white
+    NAVY  = colors.HexColor("#1F3864")
+    BLUE  = colors.HexColor("#2E75B6")
+    MBLUE = colors.HexColor("#4472C4")
+    LBLUE = colors.HexColor("#DCE6F1")
+    WHITE = colors.white
 
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle("title", fontSize=16, textColor=WHITE,
-                                 fontName="Helvetica-Bold", alignment=TA_LEFT,
-                                 spaceAfter=0, leading=20)
-    section_style = ParagraphStyle("section", fontSize=11, textColor=WHITE,
-                                   fontName="Helvetica-Bold", alignment=TA_LEFT,
-                                   spaceAfter=0, leading=14)
-    label_style = ParagraphStyle("label", fontSize=9, textColor=NAVY,
-                                 fontName="Helvetica-Bold")
-    value_style = ParagraphStyle("value", fontSize=9, fontName="Helvetica")
+    title_style   = ParagraphStyle("t",  fontSize=15, textColor=WHITE, fontName="Helvetica-Bold", leading=18)
+    source_style  = ParagraphStyle("s",  fontSize=11, textColor=WHITE, fontName="Helvetica-Bold", leading=14)
+    section_style = ParagraphStyle("ss", fontSize=9,  textColor=NAVY,  fontName="Helvetica-Bold", leading=11)
+    label_style   = ParagraphStyle("l",  fontSize=9,  textColor=NAVY,  fontName="Helvetica-Bold")
+    value_style   = ParagraphStyle("v",  fontSize=9,  fontName="Helvetica")
+
+    def banner(text, style, bg, width=170*mm):
+        t = Table([[Paragraph(text, style)]], colWidths=[width])
+        t.setStyle(TableStyle([
+            ("BACKGROUND",    (0,0), (-1,-1), bg),
+            ("TOPPADDING",    (0,0), (-1,-1), 6),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 6),
+            ("LEFTPADDING",   (0,0), (-1,-1), 10),
+        ]))
+        return t
 
     story = []
+    first_group = True
 
-    # Title block
-    title_table = Table([[Paragraph("KARA MAINS — Soundvision Report", title_style)]],
-                        colWidths=[170*mm])
-    title_table.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,-1), NAVY),
-        ("TOPPADDING",    (0,0), (-1,-1), 8),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 8),
-        ("LEFTPADDING",   (0,0), (-1,-1), 10),
-    ]))
-    story.append(title_table)
-    story.append(Spacer(1, 6*mm))
+    for group_name, sources in groups.items():
+        if not first_group:
+            story.append(PageBreak())
+        first_group = False
 
-    # Physical config section header
-    sec1 = Table([[Paragraph("Physical Configuration", section_style)]],
-                 colWidths=[170*mm])
-    sec1.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,-1), BLUE),
-        ("TOPPADDING",    (0,0), (-1,-1), 5),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 5),
-        ("LEFTPADDING",   (0,0), (-1,-1), 10),
-    ]))
-    story.append(sec1)
-    story.append(Spacer(1, 2*mm))
+        story.append(banner(f"Group: {group_name}", title_style, NAVY))
+        story.append(Spacer(1, 5*mm))
 
-    # Physical config key-value table (two columns)
-    items = list(physical.items())
-    rows = []
-    for i in range(0, len(items), 2):
-        left_key, left_val = items[i]
-        right_key, right_val = items[i+1] if i+1 < len(items) else ("", "")
-        rows.append([
-            Paragraph(left_key,  label_style), Paragraph(str(left_val),  value_style),
-            Paragraph(right_key, label_style), Paragraph(str(right_val), value_style),
-        ])
+        for source in sources:
+            story.append(banner(source["name"], source_style, BLUE))
+            story.append(Spacer(1, 2*mm))
 
-    phys_table = Table(rows, colWidths=[42*mm, 40*mm, 42*mm, 46*mm])
-    phys_style = [
-        ("GRID",         (0,0), (-1,-1), 0.5, colors.HexColor("#B0B0B0")),
-        ("TOPPADDING",   (0,0), (-1,-1), 4),
-        ("BOTTOMPADDING",(0,0), (-1,-1), 4),
-        ("LEFTPADDING",  (0,0), (-1,-1), 6),
-    ]
-    for i, _ in enumerate(rows):
-        bg = LBLUE if i % 2 == 0 else WHITE
-        phys_style.append(("BACKGROUND", (0,i), (-1,i), bg))
-    phys_table.setStyle(TableStyle(phys_style))
-    story.append(phys_table)
-    story.append(Spacer(1, 6*mm))
+            physical = source["physical"]
+            if physical:
+                story.append(banner("Physical Configuration", section_style, LBLUE))
+                story.append(Spacer(1, 1*mm))
+                items = list(physical.items())
+                rows = []
+                for i in range(0, len(items), 2):
+                    lk, lv = items[i]
+                    rk, rv = items[i+1] if i+1 < len(items) else ("", "")
+                    rows.append([
+                        Paragraph(lk, label_style), Paragraph(str(lv), value_style),
+                        Paragraph(rk, label_style), Paragraph(str(rv), value_style),
+                    ])
+                pt = Table(rows, colWidths=[42*mm, 40*mm, 42*mm, 46*mm])
+                ps = [("GRID", (0,0), (-1,-1), 0.5, colors.HexColor("#B0B0B0")),
+                      ("TOPPADDING", (0,0), (-1,-1), 3),
+                      ("BOTTOMPADDING", (0,0), (-1,-1), 3),
+                      ("LEFTPADDING", (0,0), (-1,-1), 5)]
+                for i in range(len(rows)):
+                    ps.append(("BACKGROUND", (0,i), (-1,i), LBLUE if i%2==0 else WHITE))
+                pt.setStyle(TableStyle(ps))
+                story.append(pt)
+                story.append(Spacer(1, 3*mm))
 
-    # Enclosure geometry section header
-    sec2 = Table([[Paragraph("Per-Enclosure Geometry", section_style)]],
-                 colWidths=[170*mm])
-    sec2.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,-1), BLUE),
-        ("TOPPADDING",    (0,0), (-1,-1), 5),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 5),
-        ("LEFTPADDING",   (0,0), (-1,-1), 10),
-    ]))
-    story.append(sec2)
-    story.append(Spacer(1, 2*mm))
+            enclosures = source["enclosures"]
+            columns    = source["columns"]
+            if enclosures:
+                story.append(banner("Per-Enclosure Geometry", section_style, LBLUE))
+                story.append(Spacer(1, 1*mm))
+                col_w = 170*mm / len(columns)
+                enc_rows = [columns] + [[str(e.get(k, "")) for k in columns] for e in enclosures]
+                et = Table(enc_rows, colWidths=[col_w] * len(columns))
+                es = [("BACKGROUND",    (0,0), (-1,0),  MBLUE),
+                      ("TEXTCOLOR",     (0,0), (-1,0),  WHITE),
+                      ("FONTNAME",      (0,0), (-1,0),  "Helvetica-Bold"),
+                      ("FONTSIZE",      (0,0), (-1,-1), 8),
+                      ("ALIGN",         (0,0), (-1,-1), "CENTER"),
+                      ("GRID",          (0,0), (-1,-1), 0.5, colors.HexColor("#B0B0B0")),
+                      ("TOPPADDING",    (0,0), (-1,-1), 3),
+                      ("BOTTOMPADDING", (0,0), (-1,-1), 3)]
+                for i in range(1, len(enc_rows)):
+                    es.append(("BACKGROUND", (0,i), (-1,i), LBLUE if i%2==0 else WHITE))
+                et.setStyle(TableStyle(es))
+                story.append(et)
 
-    # Enclosure table
-    enc_headers = ["Enc #", "Type", "Angle (°)", "Site (°)", "Top Z (m)", "Bot Z (m)", "Panflex"]
-    enc_rows = [enc_headers] + [
-        [str(e["Enclosure #"]), e["Type"], str(e["Angle (°)"]), str(e["Site (°)"]),
-         str(e["Top Z (m)"]), str(e["Bottom Z (m)"]), e["Panflex"]]
-        for e in enclosures
-    ]
-
-    enc_table = Table(enc_rows, colWidths=[16*mm, 24*mm, 24*mm, 22*mm, 24*mm, 24*mm, 24*mm])
-    enc_style = [
-        ("BACKGROUND",   (0,0), (-1,0),  colors.HexColor("#4472C4")),
-        ("TEXTCOLOR",    (0,0), (-1,0),  WHITE),
-        ("FONTNAME",     (0,0), (-1,0),  "Helvetica-Bold"),
-        ("FONTSIZE",     (0,0), (-1,-1), 9),
-        ("ALIGN",        (0,0), (-1,-1), "CENTER"),
-        ("GRID",         (0,0), (-1,-1), 0.5, colors.HexColor("#B0B0B0")),
-        ("TOPPADDING",   (0,0), (-1,-1), 4),
-        ("BOTTOMPADDING",(0,0), (-1,-1), 4),
-    ]
-    for i in range(1, len(enc_rows)):
-        bg = LBLUE if i % 2 == 0 else WHITE
-        enc_style.append(("BACKGROUND", (0,i), (-1,i), bg))
-    enc_table.setStyle(TableStyle(enc_style))
-    story.append(enc_table)
+            story.append(Spacer(1, 6*mm))
 
     doc.build(story)
 
@@ -328,32 +381,31 @@ def write_pdf(source_name, physical, enclosures, output_path):
 
 def process_pdf(pdf_path):
     print(f"  Processing: {pdf_path.name}")
-    text = extract_text(pdf_path)
-    source_name, kara_block = parse_kara_section(text)
-    physical   = parse_physical_config(kara_block)
-    enclosures = parse_enclosure_table(kara_block)
-    output_path = OUTPUT_DIR / (pdf_path.stem + ".xlsx")
-    write_excel(source_name, physical, enclosures, output_path)
-    print(f"  Saved:      {output_path.name}  ({len(enclosures)} enclosures)")
+    text   = extract_text(pdf_path)
+    groups = parse_document(text)
+    total  = sum(len(s) for s in groups.values())
+    print(f"  Found {len(groups)} group(s), {total} source(s)")
+    xlsx_path  = OUTPUT_DIR / (pdf_path.stem + ".xlsx")
+    pdf_path2  = OUTPUT_DIR / (pdf_path.stem + "_report.pdf")
+    write_excel(groups, xlsx_path)
+    write_pdf(groups, pdf_path2)
+    print(f"  Saved: {xlsx_path.name}")
+    print(f"  Saved: {pdf_path2.name}")
 
 
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
     if len(sys.argv) > 1:
-        # Specific file passed as argument
         pdf_path = DATA_DIR / sys.argv[1]
         if not pdf_path.exists():
             print(f"Error: {pdf_path} not found.")
             sys.exit(1)
         pdfs = [pdf_path]
     else:
-        # Process all PDFs in data/
         pdfs = sorted(DATA_DIR.glob("*.pdf"))
         if not pdfs:
             print(f"No PDF files found in {DATA_DIR}")
             sys.exit(0)
-
     print(f"Found {len(pdfs)} PDF(s) to process.\n")
     for pdf in pdfs:
         process_pdf(pdf)
