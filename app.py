@@ -9,7 +9,8 @@ st.set_page_config(
     layout="centered"
 )
 
-st.title("🔊 Soundvision PDF Extractor")
+st.image("assets/lasmall.png", width= 200)
+st.title("Soundvision PDF Extractor")
 st.markdown("Upload a Soundvision report PDF and download the data as Excel.")
 
 uploaded_file = st.file_uploader("Upload your Soundvision PDF", type="pdf")
