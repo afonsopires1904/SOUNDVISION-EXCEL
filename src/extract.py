@@ -151,16 +151,43 @@ def get_group_for_source(text, source_name):
     return "Unknown"
 
 
+def source_fingerprint(physical, enclosures):
+    """
+    Hashable fingerprint for mirror deduplication.
+    Normalises Position X and Azimuth to their absolute values so that
+    L/R mirrors (which have negated X and azimuth) hash identically.
+    """
+    normalised = {}
+    for k, v in physical.items():
+        if k in ("Position X (m)", "Azimuth (°)"):
+            try:
+                v = str(abs(float(v)))
+            except ValueError:
+                pass
+        normalised[k] = v
+    phys_tuple = tuple(sorted(normalised.items()))
+    # Sort enclosures by type so mirrored arrays (e.g. SB28_C at #1 vs #4) still match
+    from collections import Counter
+    enc_tuple = tuple(sorted(Counter(e["Type"] for e in enclosures).items()))
+    return (phys_tuple, enc_tuple)
+
+
 def parse_document(text):
     source_blocks = split_source_blocks(text)
     groups = {}
+
     for source_name, block in source_blocks:
-        if is_mirror(source_name):
+        group            = get_group_for_source(text, source_name)
+        physical         = parse_physical_config(block)
+        enclosures, cols = parse_enclosure_table(block)
+
+        # Skip if an identical source already exists in this group (mirror dedup)
+        fp = source_fingerprint(physical, enclosures)
+        if any(source_fingerprint(s["physical"], s["enclosures"]) == fp
+               for s in groups.get(group, [])):
             continue
-        canonical         = get_canonical_name(source_name)
-        group             = get_group_for_source(text, source_name)
-        physical          = parse_physical_config(block)
-        enclosures, cols  = parse_enclosure_table(block)
+
+        canonical = get_canonical_name(source_name)
         entry = {
             "name":       canonical,
             "physical":   physical,
@@ -170,6 +197,7 @@ def parse_document(text):
         if group not in groups:
             groups[group] = []
         groups[group].append(entry)
+
     return groups
 
 
