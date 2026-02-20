@@ -200,6 +200,130 @@ def write_excel(source_name, physical, enclosures, output_path):
     wb.save(output_path)
 
 
+# ── PDF writing ───────────────────────────────────────────────────────────────
+
+def write_pdf(source_name, physical, enclosures, output_path):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_LEFT, TA_CENTER
+
+    doc = SimpleDocTemplate(
+        str(output_path),
+        pagesize=A4,
+        leftMargin=20*mm, rightMargin=20*mm,
+        topMargin=20*mm, bottomMargin=20*mm
+    )
+
+    NAVY   = colors.HexColor("#1F3864")
+    BLUE   = colors.HexColor("#2E75B6")
+    LBLUE  = colors.HexColor("#DCE6F1")
+    WHITE  = colors.white
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle("title", fontSize=16, textColor=WHITE,
+                                 fontName="Helvetica-Bold", alignment=TA_LEFT,
+                                 spaceAfter=0, leading=20)
+    section_style = ParagraphStyle("section", fontSize=11, textColor=WHITE,
+                                   fontName="Helvetica-Bold", alignment=TA_LEFT,
+                                   spaceAfter=0, leading=14)
+    label_style = ParagraphStyle("label", fontSize=9, textColor=NAVY,
+                                 fontName="Helvetica-Bold")
+    value_style = ParagraphStyle("value", fontSize=9, fontName="Helvetica")
+
+    story = []
+
+    # Title block
+    title_table = Table([[Paragraph("KARA MAINS — Soundvision Report", title_style)]],
+                        colWidths=[170*mm])
+    title_table.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,-1), NAVY),
+        ("TOPPADDING",    (0,0), (-1,-1), 8),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 8),
+        ("LEFTPADDING",   (0,0), (-1,-1), 10),
+    ]))
+    story.append(title_table)
+    story.append(Spacer(1, 6*mm))
+
+    # Physical config section header
+    sec1 = Table([[Paragraph("Physical Configuration", section_style)]],
+                 colWidths=[170*mm])
+    sec1.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,-1), BLUE),
+        ("TOPPADDING",    (0,0), (-1,-1), 5),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+        ("LEFTPADDING",   (0,0), (-1,-1), 10),
+    ]))
+    story.append(sec1)
+    story.append(Spacer(1, 2*mm))
+
+    # Physical config key-value table (two columns)
+    items = list(physical.items())
+    rows = []
+    for i in range(0, len(items), 2):
+        left_key, left_val = items[i]
+        right_key, right_val = items[i+1] if i+1 < len(items) else ("", "")
+        rows.append([
+            Paragraph(left_key,  label_style), Paragraph(str(left_val),  value_style),
+            Paragraph(right_key, label_style), Paragraph(str(right_val), value_style),
+        ])
+
+    phys_table = Table(rows, colWidths=[42*mm, 40*mm, 42*mm, 46*mm])
+    phys_style = [
+        ("GRID",         (0,0), (-1,-1), 0.5, colors.HexColor("#B0B0B0")),
+        ("TOPPADDING",   (0,0), (-1,-1), 4),
+        ("BOTTOMPADDING",(0,0), (-1,-1), 4),
+        ("LEFTPADDING",  (0,0), (-1,-1), 6),
+    ]
+    for i, _ in enumerate(rows):
+        bg = LBLUE if i % 2 == 0 else WHITE
+        phys_style.append(("BACKGROUND", (0,i), (-1,i), bg))
+    phys_table.setStyle(TableStyle(phys_style))
+    story.append(phys_table)
+    story.append(Spacer(1, 6*mm))
+
+    # Enclosure geometry section header
+    sec2 = Table([[Paragraph("Per-Enclosure Geometry", section_style)]],
+                 colWidths=[170*mm])
+    sec2.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,-1), BLUE),
+        ("TOPPADDING",    (0,0), (-1,-1), 5),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+        ("LEFTPADDING",   (0,0), (-1,-1), 10),
+    ]))
+    story.append(sec2)
+    story.append(Spacer(1, 2*mm))
+
+    # Enclosure table
+    enc_headers = ["Enc #", "Type", "Angle (°)", "Site (°)", "Top Z (m)", "Bot Z (m)", "Panflex"]
+    enc_rows = [enc_headers] + [
+        [str(e["Enclosure #"]), e["Type"], str(e["Angle (°)"]), str(e["Site (°)"]),
+         str(e["Top Z (m)"]), str(e["Bottom Z (m)"]), e["Panflex"]]
+        for e in enclosures
+    ]
+
+    enc_table = Table(enc_rows, colWidths=[16*mm, 24*mm, 24*mm, 22*mm, 24*mm, 24*mm, 24*mm])
+    enc_style = [
+        ("BACKGROUND",   (0,0), (-1,0),  colors.HexColor("#4472C4")),
+        ("TEXTCOLOR",    (0,0), (-1,0),  WHITE),
+        ("FONTNAME",     (0,0), (-1,0),  "Helvetica-Bold"),
+        ("FONTSIZE",     (0,0), (-1,-1), 9),
+        ("ALIGN",        (0,0), (-1,-1), "CENTER"),
+        ("GRID",         (0,0), (-1,-1), 0.5, colors.HexColor("#B0B0B0")),
+        ("TOPPADDING",   (0,0), (-1,-1), 4),
+        ("BOTTOMPADDING",(0,0), (-1,-1), 4),
+    ]
+    for i in range(1, len(enc_rows)):
+        bg = LBLUE if i % 2 == 0 else WHITE
+        enc_style.append(("BACKGROUND", (0,i), (-1,i), bg))
+    enc_table.setStyle(TableStyle(enc_style))
+    story.append(enc_table)
+
+    doc.build(story)
+
+
 # ── Runner ────────────────────────────────────────────────────────────────────
 
 def process_pdf(pdf_path):

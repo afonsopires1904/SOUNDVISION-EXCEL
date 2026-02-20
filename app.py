@@ -1,7 +1,7 @@
 import streamlit as st
 import tempfile
 from pathlib import Path
-from src.extract import extract_text, parse_kara_section, parse_physical_config, parse_enclosure_table, write_excel
+from src.extract import extract_text, parse_kara_section, parse_physical_config, parse_enclosure_table, write_excel, write_pdf
 
 st.set_page_config(
     page_title="Soundvision Extractor",
@@ -9,13 +9,8 @@ st.set_page_config(
     layout="centered"
 )
 
-col1, col2 = st.columns([1, 6])
-with col1:
-    st.image("assets/lasmall.png", width=60)
-with col2:
-    st.title("Soundvision PDF Extractor")
-
-st.markdown("Upload a Soundvision report PDF and download the data as Excel.")
+st.title("🔊 Soundvision PDF Extractor")
+st.markdown("Upload a Soundvision report PDF and download the **KARA MAINS** data as Excel.")
 
 uploaded_file = st.file_uploader("Upload your Soundvision PDF", type="pdf")
 
@@ -44,17 +39,35 @@ if uploaded_file:
                 for k, v in physical.items():
                     st.markdown(f"**{k}:** {v}")
 
-            # Download button
+            # Generate PDF report
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_report:
+                tmp_report_path = Path(tmp_report.name)
+            write_pdf(source_name, physical, enclosures, tmp_report_path)
+
+            # Download buttons side by side
+            col1, col2 = st.columns(2)
+
             with open(tmp_xlsx_path, "rb") as f:
                 xlsx_bytes = f.read()
+            with col1:
+                st.download_button(
+                    label="📥 Download Excel",
+                    data=xlsx_bytes,
+                    file_name=uploaded_file.name.replace(".pdf", ".xlsx"),
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
 
-            output_name = uploaded_file.name.replace(".pdf", ".xlsx")
-            st.download_button(
-                label="📥 Download Excel",
-                data=xlsx_bytes,
-                file_name=output_name,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
+            with open(tmp_report_path, "rb") as f:
+                pdf_bytes = f.read()
+            with col2:
+                st.download_button(
+                    label="📄 Download PDF Report",
+                    data=pdf_bytes,
+                    file_name=uploaded_file.name.replace(".pdf", "_report.pdf"),
+                    mime="application/pdf",
+                    use_container_width=True
+                )
 
         except ValueError as e:
             st.error(f"❌ {e}")
@@ -62,4 +75,4 @@ if uploaded_file:
             st.error(f"❌ Unexpected error: {e}")
 
 st.markdown("---")
-st.caption("Built for internal use by Afonso Pires·")
+st.caption("Built for internal use · Reads KARA L/R as a single representative array")
