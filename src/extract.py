@@ -181,6 +181,10 @@ def parse_document(text):
         physical         = parse_physical_config(block)
         enclosures, cols = parse_enclosure_table(block)
 
+        # Skip stacked arrays (subs on the ground)
+        if "stacked" in physical.get("Configuration", "").lower():
+            continue
+
         # Skip if an identical source already exists in this group (mirror dedup)
         fp = source_fingerprint(physical, enclosures)
         if any(source_fingerprint(s["physical"], s["enclosures"]) == fp
