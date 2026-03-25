@@ -32,6 +32,10 @@ if uploaded_file:
             total_sources = sum(len(s) for s in groups.values())
             st.success(f"✅ Found **{len(groups)} group(s)** and **{total_sources} source(s)**")
 
+            if total_sources == 0:
+                st.warning("⚠️ No flown sources found. The PDF may only contain stacked arrays, or may not be a valid Soundvision report.")
+                st.stop()
+
             # Preview
             with st.expander("Preview extracted data"):
                 for group_name, sources in groups.items():
