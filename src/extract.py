@@ -15,29 +15,17 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
-# ── Paths ─────────────────────────────────────────────────────────────────────
-
 SRC_DIR    = Path(__file__).parent
 DATA_DIR   = SRC_DIR.parent / "data"
 OUTPUT_DIR = SRC_DIR.parent / "output"
-
-# ── Text extraction ───────────────────────────────────────────────────────────
 
 def extract_text(pdf_path):
     with pdfplumber.open(pdf_path) as pdf:
         return "\n".join(page.extract_text() or "" for page in pdf.pages)
 
-
-# ── Generic document parsing ──────────────────────────────────────────────────
-
 def get_canonical_name(source_name):
     name = re.sub(r'\s+[LR]\s*(\d*)$', lambda m: (' ' + m.group(1)) if m.group(1) else '', source_name).strip()
     return name
-
-
-def is_mirror(name):
-    return bool(re.search(r'\s+R(\s+\d+)?$', name))
-
 
 def parse_physical_config(block):
     fields = {
@@ -64,13 +52,11 @@ def parse_physical_config(block):
             config[key] = m.group(1).strip()
     return config
 
-
 def parse_enclosure_table(block):
     has_panflex = bool(re.search(r"Panflex", block))
     has_angles  = bool(re.search(r"Angles \(°\)", block))
 
     if has_angles and has_panflex:
-        # Line array with Panflex (KARA, K1, K2, K3...)
         pattern = re.compile(
             r"#(\d+)\s+([\w\s]+?)\s+([\-\d.]+)\s+([\-\d.]+)\s+([\-\d.]+)\s+([\-\d.]+)\s+([\d/]+)\s*$",
             re.MULTILINE
@@ -78,18 +64,15 @@ def parse_enclosure_table(block):
         rows = []
         for m in pattern.finditer(block):
             rows.append({
-                "Enc #":        int(m.group(1)),
-                "Type":         m.group(2).strip(),
-                "Angle (°)":    float(m.group(3)),
-                "Site (°)":     float(m.group(4)),
-                "Top Z (m)":    float(m.group(5)),
-                "Bottom Z (m)": float(m.group(6)),
-                "Panflex":      m.group(7),
+                "Enc #":     int(m.group(1)),
+                "Type":      m.group(2).strip(),
+                "Angle (°)": float(m.group(3)),
+                "Site (°)":  float(m.group(4)),
+                "Panflex":   m.group(7),
             })
-        return rows, ["Enc #", "Type", "Angle (°)", "Site (°)", "Top Z (m)", "Bottom Z (m)", "Panflex"]
+        return rows, ["Enc #", "Type", "Angle (°)", "Site (°)", "Panflex"]
 
     elif has_angles and not has_panflex:
-        # Line array without Panflex (KIVA, X-Series arrays...)
         pattern = re.compile(
             r"#(\d+)\s+([\w\s]+?)\s+([\-\d.]+)\s+([\-\d.]+)\s+([\-\d.]+)\s+([\-\d.]+)\s*$",
             re.MULTILINE
@@ -97,17 +80,14 @@ def parse_enclosure_table(block):
         rows = []
         for m in pattern.finditer(block):
             rows.append({
-                "Enc #":        int(m.group(1)),
-                "Type":         m.group(2).strip(),
-                "Angle (°)":    float(m.group(3)),
-                "Site (°)":     float(m.group(4)),
-                "Top Z (m)":    float(m.group(5)),
-                "Bottom Z (m)": float(m.group(6)),
+                "Enc #":     int(m.group(1)),
+                "Type":      m.group(2).strip(),
+                "Angle (°)": float(m.group(3)),
+                "Site (°)":  float(m.group(4)),
             })
-        return rows, ["Enc #", "Type", "Angle (°)", "Site (°)", "Top Z (m)", "Bottom Z (m)"]
+        return rows, ["Enc #", "Type", "Angle (°)", "Site (°)"]
 
     else:
-        # Subs / point source (SB28, X8, KS28...)
         pattern = re.compile(
             r"#(\d+)\s+([\w]+(?:_C)?)\s+([\-\d.]+)\s+([\-\d.]+)\s+([\-\d.]+)\s*$",
             re.MULTILINE
@@ -115,14 +95,11 @@ def parse_enclosure_table(block):
         rows = []
         for m in pattern.finditer(block):
             rows.append({
-                "Enc #":        int(m.group(1)),
-                "Type":         m.group(2).strip(),
-                "Site (°)":     float(m.group(3)),
-                "Top Z (m)":    float(m.group(4)),
-                "Bottom Z (m)": float(m.group(5)),
+                "Enc #":    int(m.group(1)),
+                "Type":     m.group(2).strip(),
+                "Site (°)": float(m.group(3)),
             })
-        return rows, ["Enc #", "Type", "Site (°)", "Top Z (m)", "Bottom Z (m)"]
-
+        return rows, ["Enc #", "Type", "Site (°)"]
 
 def split_source_blocks(text):
     pattern = re.compile(r"^\d+\.\s+Source:\s+(.+)$", re.MULTILINE)
@@ -133,7 +110,6 @@ def split_source_blocks(text):
         end   = matches[i + 1].start() if i + 1 < len(matches) else len(text)
         blocks.append((m.group(1).strip(), text[start:end]))
     return blocks
-
 
 def get_group_for_source(text, source_name):
     pattern = re.compile(rf"\d+\.\s+Source:\s+{re.escape(source_name)}")
@@ -150,13 +126,7 @@ def get_group_for_source(text, source_name):
             return name
     return "Unknown"
 
-
 def source_fingerprint(physical, enclosures):
-    """
-    Hashable fingerprint for mirror deduplication.
-    Normalises Position X and Azimuth to their absolute values so that
-    L/R mirrors (which have negated X and azimuth) hash identically.
-    """
     normalised = {}
     for k, v in physical.items():
         if k in ("Position X (m)", "Azimuth (°)"):
@@ -166,31 +136,23 @@ def source_fingerprint(physical, enclosures):
                 pass
         normalised[k] = v
     phys_tuple = tuple(sorted(normalised.items()))
-    # Sort enclosures by type so mirrored arrays (e.g. SB28_C at #1 vs #4) still match
     from collections import Counter
     enc_tuple = tuple(sorted(Counter(e["Type"] for e in enclosures).items()))
     return (phys_tuple, enc_tuple)
 
-
 def parse_document(text):
     source_blocks = split_source_blocks(text)
     groups = {}
-
     for source_name, block in source_blocks:
         group            = get_group_for_source(text, source_name)
         physical         = parse_physical_config(block)
         enclosures, cols = parse_enclosure_table(block)
-
-        # Skip stacked arrays (subs on the ground)
         if "stacked" in physical.get("Configuration", "").lower():
             continue
-
-        # Skip if an identical source already exists in this group (mirror dedup)
         fp = source_fingerprint(physical, enclosures)
         if any(source_fingerprint(s["physical"], s["enclosures"]) == fp
                for s in groups.get(group, [])):
             continue
-
         canonical = get_canonical_name(source_name)
         entry = {
             "name":       canonical,
@@ -201,11 +163,7 @@ def parse_document(text):
         if group not in groups:
             groups[group] = []
         groups[group].append(entry)
-
     return groups
-
-
-# ── Styling helpers ───────────────────────────────────────────────────────────
 
 def thin_border():
     s = Side(style="thin", color="B0B0B0")
@@ -223,19 +181,14 @@ BODY_FONT    = Font(name="Arial", size=10)
 CENTER       = Alignment(horizontal="center", vertical="center")
 LEFT         = Alignment(horizontal="left",   vertical="center")
 
-
-# ── Excel writing ─────────────────────────────────────────────────────────────
-
 def write_excel(groups, output_path):
     wb = Workbook()
     wb.remove(wb.active)
-
     for group_name, sources in groups.items():
         sheet_name = re.sub(r'[\\/*?:\[\]]', '', group_name)[:31]
         ws = wb.create_sheet(title=sheet_name)
         ws.sheet_view.showGridLines = False
         row = 1
-
         ws.merge_cells(f"A{row}:G{row}")
         c = ws[f"A{row}"]
         c.value = f"Group: {group_name}"
@@ -243,7 +196,6 @@ def write_excel(groups, output_path):
         c.fill = HEADER_FILL; c.alignment = CENTER
         ws.row_dimensions[row].height = 30
         row += 2
-
         for source in sources:
             ws.merge_cells(f"A{row}:G{row}")
             c = ws[f"A{row}"]
@@ -252,7 +204,6 @@ def write_excel(groups, output_path):
             c.fill = SUBHEAD_FILL; c.alignment = LEFT
             ws.row_dimensions[row].height = 22
             row += 1
-
             physical = source["physical"]
             if physical:
                 items = list(physical.items())
@@ -273,7 +224,6 @@ def write_excel(groups, output_path):
                                        end_row=row, end_column=col_label + 2)
                     row += 1
                 row += 1
-
             enclosures = source["enclosures"]
             columns    = source["columns"]
             if enclosures:
@@ -284,14 +234,12 @@ def write_excel(groups, output_path):
                 c.fill = ALT_FILL; c.alignment = LEFT
                 ws.row_dimensions[row].height = 15
                 row += 1
-
                 for col, h in enumerate(columns, 1):
                     c = ws.cell(row=row, column=col, value=h)
                     c.font = Font(name="Arial", bold=True, color="FFFFFF", size=9)
                     c.fill = ROW_FILL; c.alignment = CENTER; c.border = thin_border()
                 ws.row_dimensions[row].height = 15
                 row += 1
-
                 for enc in enclosures:
                     fill = ALT_FILL if enc["Enc #"] % 2 == 0 else WHITE_FILL
                     for col, key in enumerate(columns, 1):
@@ -299,16 +247,10 @@ def write_excel(groups, output_path):
                         c.font = BODY_FONT; c.alignment = CENTER
                         c.fill = fill; c.border = thin_border()
                     row += 1
-
             row += 2
-
         for col, width in zip("ABCDEFG", [22, 18, 4, 22, 18, 4, 12]):
             ws.column_dimensions[col].width = width
-
     wb.save(output_path)
-
-
-# ── PDF writing ───────────────────────────────────────────────────────────────
 
 def write_pdf(groups, output_path):
     from reportlab.lib.pagesizes import A4
@@ -346,19 +288,15 @@ def write_pdf(groups, output_path):
 
     story = []
     first_group = True
-
     for group_name, sources in groups.items():
         if not first_group:
             story.append(PageBreak())
         first_group = False
-
         story.append(banner(f"Group: {group_name}", title_style, NAVY))
         story.append(Spacer(1, 5*mm))
-
         for source in sources:
             story.append(banner(source["name"], source_style, BLUE))
             story.append(Spacer(1, 2*mm))
-
             physical = source["physical"]
             if physical:
                 story.append(banner("Physical Configuration", section_style, LBLUE))
@@ -382,7 +320,6 @@ def write_pdf(groups, output_path):
                 pt.setStyle(TableStyle(ps))
                 story.append(pt)
                 story.append(Spacer(1, 3*mm))
-
             enclosures = source["enclosures"]
             columns    = source["columns"]
             if enclosures:
@@ -403,13 +340,8 @@ def write_pdf(groups, output_path):
                     es.append(("BACKGROUND", (0,i), (-1,i), LBLUE if i%2==0 else WHITE))
                 et.setStyle(TableStyle(es))
                 story.append(et)
-
             story.append(Spacer(1, 6*mm))
-
     doc.build(story)
-
-
-# ── Runner ────────────────────────────────────────────────────────────────────
 
 def process_pdf(pdf_path):
     print(f"  Processing: {pdf_path.name}")
@@ -423,7 +355,6 @@ def process_pdf(pdf_path):
     write_pdf(groups, pdf_path2)
     print(f"  Saved: {xlsx_path.name}")
     print(f"  Saved: {pdf_path2.name}")
-
 
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -442,7 +373,6 @@ def main():
     for pdf in pdfs:
         process_pdf(pdf)
     print("\nDone.")
-
 
 if __name__ == "__main__":
     main()
