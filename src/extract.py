@@ -165,6 +165,15 @@ def parse_document(text):
         groups[group].append(entry)
     return groups
 
+def enclosure_group_size(enclosures):
+    """Returns the colour-group size based on speaker model."""
+    if not enclosures:
+        return 1
+    model = enclosures[0].get("Type", "").upper()
+    if any(x in model for x in ("K1", "K2", "K3")):
+        return 4
+    return 3  # KARA, KIVA and everything else
+
 def thin_border():
     s = Side(style="thin", color="B0B0B0")
     return Border(left=s, right=s, top=s, bottom=s)
@@ -240,8 +249,9 @@ def write_excel(groups, output_path):
                     c.fill = ROW_FILL; c.alignment = CENTER; c.border = thin_border()
                 ws.row_dimensions[row].height = 15
                 row += 1
-                for enc in enclosures:
-                    fill = ALT_FILL if enc["Enc #"] % 2 == 0 else WHITE_FILL
+                group_size = enclosure_group_size(enclosures)
+                for idx, enc in enumerate(enclosures):
+                    fill = ALT_FILL if (idx // group_size) % 2 == 0 else WHITE_FILL
                     for col, key in enumerate(columns, 1):
                         c = ws.cell(row=row, column=col, value=enc.get(key, ""))
                         c.font = BODY_FONT; c.alignment = CENTER
@@ -336,8 +346,9 @@ def write_pdf(groups, output_path):
                       ("GRID",          (0,0), (-1,-1), 0.5, colors.HexColor("#B0B0B0")),
                       ("TOPPADDING",    (0,0), (-1,-1), 3),
                       ("BOTTOMPADDING", (0,0), (-1,-1), 3)]
+                group_size = enclosure_group_size(enclosures)
                 for i in range(1, len(enc_rows)):
-                    es.append(("BACKGROUND", (0,i), (-1,i), LBLUE if i%2==0 else WHITE))
+                    es.append(("BACKGROUND", (0,i), (-1,i), LBLUE if ((i-1) // group_size) % 2 == 0 else WHITE))
                 et.setStyle(TableStyle(es))
                 story.append(et)
             story.append(Spacer(1, 6*mm))
