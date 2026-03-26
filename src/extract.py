@@ -442,7 +442,17 @@ def write_excel(groups, output_path, report_name="", report_date=""):
             from openpyxl.worksheet.pagebreak import Break
             ws.row_breaks.append(Break(id=row))
             row += 2
-        for col, width in zip("ABCDEFG", [22, 18, 4, 22, 18, 4, 12]):
+        # Col map: Enc#, Type, Angle, PanflexL, PanflexR, AmpIDL, AmpIDR, AmpCh
+        col_widths = {
+            "A": 8,   # Enc #
+            "B": 14,  # Type
+            "C": 10,  # Angle (°)
+            "D": 9,   # Panflex L
+            "E": 9,   # Panflex R
+            "F": 9,   # Amp ID L
+            "G": 9,   # Amp ID R
+        }
+        for col, width in col_widths.items():
             ws.column_dimensions[col].width = width
     # ── Summary sheet ─────────────────────────────────────────────────────────
     ws = wb.create_sheet(title="Summary")
@@ -537,13 +547,41 @@ def write_excel(groups, output_path, report_name="", report_date=""):
                 ws.row_dimensions[row].height = 12
                 row += 1
 
-                # Table headers
+                # Two-row grouped headers (same as main sheets)
+                sum_group_headers = {
+                    "Panflex L": "Panflex", "Panflex R": "Panflex",
+                    "Amp ID L":  "Amp ID",  "Amp ID R":  "Amp ID",
+                }
+                written_sum_groups = set()
                 for col, h in enumerate(columns, 1):
-                    c = ws.cell(row=row, column=col, value=h)
-                    c.font = Font(name="Arial", bold=True, color="F5A623", size=7)
-                    c.fill = PatternFill("solid", start_color="282C34")
-                    c.alignment = C; c.border = thin_border()
-                ws.row_dimensions[row].height = 12
+                    grp = sum_group_headers.get(h)
+                    if grp and grp not in written_sum_groups:
+                        r_key = h.replace(" L", " R")
+                        r_col = columns.index(r_key) + 1 if r_key in columns else col
+                        ws.merge_cells(start_row=row, start_column=col, end_row=row, end_column=r_col)
+                        c = ws.cell(row=row, column=col, value=grp)
+                        c.font = Font(name="Arial", bold=True, color="F5A623", size=7)
+                        c.fill = PatternFill("solid", start_color="282C34")
+                        c.alignment = C; c.border = thin_border()
+                        written_sum_groups.add(grp)
+                    elif not grp:
+                        ws.merge_cells(start_row=row, start_column=col, end_row=row+1, end_column=col)
+                        c = ws.cell(row=row, column=col, value=h)
+                        c.font = Font(name="Arial", bold=True, color="F5A623", size=7)
+                        c.fill = PatternFill("solid", start_color="282C34")
+                        c.alignment = C; c.border = thin_border()
+                ws.row_dimensions[row].height = 10
+                row += 1
+                for col, h in enumerate(columns, 1):
+                    if h in sum_group_headers:
+                        label = "L" if h.endswith(" L") else "R"
+                        c = ws.cell(row=row, column=col, value=label)
+                        c.font = Font(name="Arial", bold=True, color="F5A623", size=7)
+                        c.fill = PatternFill("solid", start_color="282C34")
+                        c.alignment = C; c.border = thin_border()
+                    else:
+                        ws.cell(row=row, column=col).border = thin_border()
+                ws.row_dimensions[row].height = 10
                 row += 1
 
                 for enc_idx, enc in enumerate(enclosures):
@@ -565,8 +603,9 @@ def write_excel(groups, output_path, report_name="", report_date=""):
         row += 1  # spacer between groups
 
     # Column widths for summary sheet
-    for col, width in zip("ABCDEFGHIJ", [16, 12, 4, 16, 12, 10, 10, 10, 10, 10]):
-        ws.column_dimensions[get_column_letter(col.encode()[0] - 64)].width = width
+    sum_widths = [8, 12, 10, 9, 9, 9, 9, 9, 9, 9]
+    for i, width in enumerate(sum_widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = width
 
     wb.save(output_path)
 
@@ -599,9 +638,9 @@ def write_pdf(groups, output_path, report_name="", report_date=""):
         t = Table([[Paragraph(text, style)]], colWidths=[width])
         t.setStyle(TableStyle([
             ("BACKGROUND",    (0,0), (-1,-1), bg),
-            ("TOPPADDING",    (0,0), (-1,-1), 6),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 6),
-            ("LEFTPADDING",   (0,0), (-1,-1), 10),
+            ("TOPPADDING",    (0,0), (-1,-1), 3),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 3),
+            ("LEFTPADDING",   (0,0), (-1,-1), 8),
         ]))
         return t
 
@@ -619,12 +658,12 @@ def write_pdf(groups, output_path, report_name="", report_date=""):
         ], colWidths=[170*mm])
         cover_table.setStyle(TableStyle([
             ("BACKGROUND",    (0,0), (-1,-1), colors.HexColor("#282C34")),
-            ("TOPPADDING",    (0,0), (-1,-1), 14),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 14),
-            ("LEFTPADDING",   (0,0), (-1,-1), 16),
+            ("TOPPADDING",    (0,0), (-1,-1), 5),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+            ("LEFTPADDING",   (0,0), (-1,-1), 10),
         ]))
         story.append(cover_table)
-        story.append(Spacer(1, 8*mm))
+        story.append(Spacer(1, 3*mm))
 
     first_group = True
     for group_name, sources in groups.items():
@@ -632,14 +671,14 @@ def write_pdf(groups, output_path, report_name="", report_date=""):
             story.append(PageBreak())
         first_group = False
         story.append(banner(f"Group: {group_name}", title_style, NAVY))
-        story.append(Spacer(1, 5*mm))
+        story.append(Spacer(1, 2*mm))
         first_source = True
         for source in sources:
             if not first_source:
                 story.append(PageBreak())
             first_source = False
             story.append(banner(source["name"], source_style, BLUE))
-            story.append(Spacer(1, 2*mm))
+            story.append(Spacer(1, 1*mm))
             physical = source["physical"]
             if physical:
                 story.append(banner("Physical Configuration", section_style, colors.HexColor("#4A5060")))
@@ -694,7 +733,7 @@ def write_pdf(groups, output_path, report_name="", report_date=""):
                     es.append(("BACKGROUND", (0,i), (-1,i), bg))
                 et.setStyle(TableStyle(es))
                 story.append(et)
-            story.append(Spacer(1, 6*mm))
+            story.append(Spacer(1, 2*mm))
     doc.build(story)
 
 def process_pdf(pdf_path):
