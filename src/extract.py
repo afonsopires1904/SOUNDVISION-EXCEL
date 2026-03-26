@@ -338,6 +338,8 @@ def write_excel(groups, output_path):
                         c.font = BODY_FONT; c.alignment = CENTER
                         c.fill = fill; c.border = thin_border()
                     row += 1
+            from openpyxl.worksheet.pagebreak import Break
+            ws.row_breaks.append(Break(id=row))
             row += 2
         for col, width in zip("ABCDEFG", [22, 18, 4, 22, 18, 4, 12]):
             ws.column_dimensions[col].width = width
@@ -386,7 +388,11 @@ def write_pdf(groups, output_path):
         first_group = False
         story.append(banner(f"Group: {group_name}", title_style, NAVY))
         story.append(Spacer(1, 5*mm))
+        first_source = True
         for source in sources:
+            if not first_source:
+                story.append(PageBreak())
+            first_source = False
             story.append(banner(source["name"], source_style, BLUE))
             story.append(Spacer(1, 2*mm))
             physical = source["physical"]

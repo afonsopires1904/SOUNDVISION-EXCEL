@@ -87,7 +87,8 @@ st.markdown(f"""
 
 # ── Upload ────────────────────────────────────────────────────────────────────
 if st.session_state.groups is None:
-    uploaded_file = st.file_uploader("Upload your Soundvision PDF", type="pdf", label_visibility="collapsed")
+    uploaded_file = st.file_uploader("⚠️ One report at a time — upload a single Soundvision PDF export.", type="pdf")
+
 else:
     uploaded_file = None
 
@@ -201,5 +202,5 @@ if st.session_state.groups:
         st.rerun()
 
 st.markdown("---")
-st.caption("⚠️ L/R mirror arrays are deduplicated — only one side is shown as representative.")
-st.caption("Built for internal purposes by Afonso Pires.")
+st.caption("ℹ️ Arrays L/R are mirrored — only one side is extracted per group.")
+st.markdown("<p style='font-size:14px; color:#888; text-align:center; margin-top: 48px; margin-bottom: 16px;'> · Built for internal purposes by Afonso Pires</p>", unsafe_allow_html=True)
