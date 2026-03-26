@@ -13,11 +13,8 @@ st.set_page_config(
 st.markdown("""
 <style>
 .step-bar {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0;
-    margin: 1.5rem 0 2rem 0;
+    display: flex; align-items: center; justify-content: center;
+    gap: 0; margin: 1.5rem 0 2rem 0;
 }
 .step { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .step-circle {
@@ -33,7 +30,6 @@ st.markdown("""
 .step-label.done    { color: #aaa; }
 .step-line { height: 2px; width: 60px; background: #3A3F4B; margin-bottom: 22px; }
 .step-line.done { background: #F5A623; }
-.subtitle { color: #888; font-size: 15px; margin-top: -12px; margin-bottom: 24px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -50,20 +46,11 @@ with col2:
     """, unsafe_allow_html=True)
 
 # ── Session state ─────────────────────────────────────────────────────────────
-if "groups" not in st.session_state:
-    st.session_state.groups = None
-if "file_name" not in st.session_state:
-    st.session_state.file_name = ""
-if "report_name" not in st.session_state:
-    st.session_state.report_name = ""
-if "report_date" not in st.session_state:
-    st.session_state.report_date = ""
+for key, default in [("groups", None), ("file_name", ""), ("report_name", ""), ("report_date", "")]:
+    if key not in st.session_state:
+        st.session_state[key] = default
 
-# Determine current step based on state
-if st.session_state.groups is None:
-    current_step = 1
-else:
-    current_step = 3
+current_step = 1 if st.session_state.groups is None else 3
 
 def sc(n):
     if n < current_step: return "done"
@@ -92,7 +79,6 @@ st.markdown(f"""
 # ── Upload ────────────────────────────────────────────────────────────────────
 if st.session_state.groups is None:
     uploaded_file = st.file_uploader("⚠️ One report at a time — upload a single Soundvision PDF export.", type="pdf")
-
 else:
     uploaded_file = None
 
@@ -109,7 +95,7 @@ if uploaded_file and st.session_state.groups is None:
             total = sum(len(s) for s in groups.values())
             if total == 0:
                 status.update(label="No flown sources found.", state="error")
-                st.warning("⚠️ No flown sources found. The PDF may only contain stacked arrays, or may not be a valid Soundvision report.")
+                st.warning("⚠️ No flown sources found.")
                 st.stop()
             st.write(f"Found **{len(groups)} group(s)** and **{total} source(s)**.")
             name, date = extract_metadata(text)
@@ -136,32 +122,30 @@ if st.session_state.groups:
     # Generate files
     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_xlsx:
         tmp_xlsx_path = Path(tmp_xlsx.name)
-    write_excel(groups, tmp_xlsx_path, report_name=st.session_state.report_name, report_date=st.session_state.report_date)
+    write_excel(groups, tmp_xlsx_path,
+                report_name=st.session_state.report_name,
+                report_date=st.session_state.report_date)
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_report:
         tmp_report_path = Path(tmp_report.name)
-    write_pdf(groups, tmp_report_path, report_name=st.session_state.report_name, report_date=st.session_state.report_date)
+    write_pdf(groups, tmp_report_path,
+              report_name=st.session_state.report_name,
+              report_date=st.session_state.report_date)
 
-    # Download buttons first
+    # Download buttons — Excel green, PDF amber
     st.markdown("""
     <style>
     div[data-testid="stDownloadButton"]:nth-of-type(1) button {
-        background-color: #1a2a3a;
-        border-color: #1e5f8a;
-        color: #63b3ed;
+        background-color: #1a3a2a; border-color: #2d6a4f; color: #52b788;
     }
     div[data-testid="stDownloadButton"]:nth-of-type(1) button:hover {
-        background-color: #1e5f8a;
-        color: #ebf8ff;
+        background-color: #2d6a4f; color: #d8f3dc;
     }
     div[data-testid="stDownloadButton"]:nth-of-type(2) button {
-        background-color: #2a1a0a;
-        border-color: #B7791F;
-        color: #F5A623;
+        background-color: #2a1a0a; border-color: #B7791F; color: #F5A623;
     }
     div[data-testid="stDownloadButton"]:nth-of-type(2) button:hover {
-        background-color: #744210;
-        color: #fefcbf;
+        background-color: #744210; color: #fefcbf;
     }
     </style>
     """, unsafe_allow_html=True)

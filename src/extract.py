@@ -13,6 +13,8 @@ import pdfplumber
 from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.formatting.rule import CellIsRule
 from openpyxl.utils import get_column_letter
 
 SRC_DIR    = Path(__file__).parent
@@ -108,6 +110,7 @@ def parse_enclosure_table(block):
                 "Enc #":     enc_num,
                 "Type":      cab_type,
                 "Angle (°)": angle,
+                "Circuit":   "",
                 "Panflex L": parts[0],
                 "Panflex R": parts[1] if len(parts) > 1 else parts[0],
                 "Amp ID L":  "",
@@ -115,7 +118,7 @@ def parse_enclosure_table(block):
                 "Amp Ch":    "",
             })
         rows.sort(key=lambda r: r["Enc #"])
-        return rows, ["Enc #", "Type", "Angle (°)", "Panflex L", "Panflex R", "Amp ID L", "Amp ID R", "Amp Ch"]
+        return rows, ["Enc #", "Type", "Angle (°)", "Circuit", "Panflex L", "Panflex R", "Amp ID L", "Amp ID R", "Amp Ch"]
 
     else:
         # Subs / point source (KS28, SB28, X8...)
@@ -128,11 +131,12 @@ def parse_enclosure_table(block):
             rows.append({
                 "Enc #":     int(m.group(1)),
                 "Type":      m.group(2).strip(),
+                "Circuit":   "",
                 "Amp ID L":  "",
                 "Amp ID R":  "",
                 "Amp Ch":    "",
             })
-        return rows, ["Enc #", "Type", "Amp ID L", "Amp ID R", "Amp Ch"]
+        return rows, ["Enc #", "Type", "Circuit", "Amp ID L", "Amp ID R", "Amp Ch"]
 
 def split_source_blocks(text):
     pattern = re.compile(r"^\d+\.\s+Source:\s+(.+)$", re.MULTILINE)
@@ -280,6 +284,26 @@ def grouped_physical_items(physical):
 
 
 CARD_FILL = PatternFill("solid", start_color="F4CCCC")  # soft red for cardioid cabinets
+
+# Resistor colour code palette — vivid colours matching resistor bands
+CIRCUIT_COLORS = {
+    "A": "8B4513",  # Brown  (1)
+    "B": "FF0000",  # Red    (2)
+    "C": "FF6600",  # Orange (3)
+    "D": "FFD700",  # Yellow (4)
+    "E": "008000",  # Green  (5)
+    "F": "0000FF",  # Blue   (6)
+    "G": "8B00FF",  # Violet (7)
+    "H": "808080",  # Grey   (8)
+    "I": "F0F0F0",  # White  (9)
+    "J": "222222",  # Black  (0)
+}
+
+def _circuit_fill(val):
+    hex_color = CIRCUIT_COLORS.get(str(val).strip().upper())
+    if hex_color:
+        return PatternFill("solid", start_color=hex_color)
+    return None
 
 def write_excel(groups, output_path, report_name="", report_date=""):
     wb = Workbook()
@@ -434,11 +458,41 @@ def write_excel(groups, output_path, report_name="", report_date=""):
                     else:
                         row_fill = ALT_FILL if enc_color_index(idx, enclosures) == 0 else WHITE_FILL
                     for col, key in enumerate(columns, 1):
-                        fill = INPUT_FILL if key in ("Amp ID L", "Amp ID R", "Amp Ch") else row_fill
-                        c = ws.cell(row=row, column=col, value=enc.get(key, ""))
+                        val = enc.get(key, "")
+                        if key == "Circuit":
+                            cfill = _circuit_fill(val)
+                            fill = cfill if cfill else INPUT_FILL
+                        elif key in ("Amp ID L", "Amp ID R", "Amp Ch"):
+                            fill = INPUT_FILL
+                        else:
+                            fill = row_fill
+                        c = ws.cell(row=row, column=col, value=val)
                         c.font = BODY_FONT; c.alignment = CENTER
                         c.fill = fill; c.border = thin_border()
                     row += 1
+            # Dropdown validation for Circuit column
+            if "Circuit" in columns:
+                circuit_col_idx = columns.index("Circuit") + 1
+                circuit_col_letter = get_column_letter(circuit_col_idx)
+                enc_start = row - len(enclosures)
+                enc_end   = row - 1
+                dv = DataValidation(
+                    type="list",
+                    formula1='"A,B,C,D,E,F,G,H,I,J"',
+                    allow_blank=True,
+                )
+                ws.add_data_validation(dv)
+                dv.add(f"{circuit_col_letter}{enc_start}:{circuit_col_letter}{enc_end}")
+
+                # Conditional formatting — cell background by circuit letter
+                circuit_range = f"{circuit_col_letter}{enc_start}:{circuit_col_letter}{enc_end}"
+                for letter, hex_color in CIRCUIT_COLORS.items():
+                    ws.conditional_formatting.add(circuit_range, CellIsRule(
+                        operator="equal",
+                        formula=[f'"{letter}"'],
+                        fill=PatternFill("solid", start_color=hex_color, end_color=hex_color)
+                    ))
+
             from openpyxl.worksheet.pagebreak import Break
             ws.row_breaks.append(Break(id=row))
             row += 2
@@ -447,10 +501,12 @@ def write_excel(groups, output_path, report_name="", report_date=""):
             "A": 8,   # Enc #
             "B": 14,  # Type
             "C": 10,  # Angle (°)
-            "D": 9,   # Panflex L
-            "E": 9,   # Panflex R
-            "F": 9,   # Amp ID L
-            "G": 9,   # Amp ID R
+            "D": 8,   # Circuit
+            "E": 9,   # Panflex L
+            "F": 9,   # Panflex R
+            "G": 9,   # Amp ID L
+            "H": 9,   # Amp ID R
+            "I": 9,   # Amp Ch
         }
         for col, width in col_widths.items():
             ws.column_dimensions[col].width = width
