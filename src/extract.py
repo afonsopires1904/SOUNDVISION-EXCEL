@@ -45,6 +45,7 @@ def parse_physical_config(block):
         "Front Motor (kg)":  r"Front motor load:\s*([\d.]+)",
         "Rear Motor (kg)":   r"Rear motor load:\s*([\d.]+)",
         "Front L Motor (kg)":r"Front left motor load:\s*([\d.]+)",
+        "Rigging Points":    r"(?:Front|Rear).*?pickup position.*?:\s*(EXT|INT)\s*\(",
         "Front R Motor (kg)":r"Front right motor load:\s*([\d.]+)",
     }
     config = {}
@@ -207,14 +208,16 @@ def thin_border():
     s = Side(style="thin", color="B0B0B0")
     return Border(left=s, right=s, top=s, bottom=s)
 
-HEADER_FILL  = PatternFill("solid", start_color="1F3864")
-SUBHEAD_FILL = PatternFill("solid", start_color="2E75B6")
-ALT_FILL     = PatternFill("solid", start_color="DCE6F1")
-WHITE_FILL   = PatternFill("solid", start_color="FFFFFF")
-ROW_FILL     = PatternFill("solid", start_color="4472C4")
+HEADER_FILL  = PatternFill("solid", start_color="282C34")
+SUBHEAD_FILL = PatternFill("solid", start_color="3A3F4B")
+ALT_FILL     = PatternFill("solid", start_color="FAF3E0")
+WHITE_FILL   = PatternFill("solid", start_color="FAFAFA")
+ROW_FILL     = PatternFill("solid", start_color="282C34")
+CARD_FILL    = PatternFill("solid", start_color="F9DCDC")
+SECTION_FILL = PatternFill("solid", start_color="E8E0D0")  # warm grey for section labels
 HEADER_FONT  = Font(name="Arial", bold=True, color="FFFFFF", size=13)
 SUBHEAD_FONT = Font(name="Arial", bold=True, color="FFFFFF", size=10)
-LABEL_FONT   = Font(name="Arial", bold=True, color="1F3864", size=10)
+LABEL_FONT   = Font(name="Arial", bold=True, color="3A3F4B", size=10)
 BODY_FONT    = Font(name="Arial", size=10)
 CENTER       = Alignment(horizontal="center", vertical="center")
 LEFT         = Alignment(horizontal="left",   vertical="center")
@@ -222,7 +225,7 @@ LEFT         = Alignment(horizontal="left",   vertical="center")
 # ── Field grouping for physical config display ───────────────────────────────
 
 FIELD_GROUPS = [
-    ("Rigging",     ["Configuration", "Bumper", "# Motors", "Total Weight (kg)", "Front Motor (kg)", "Rear Motor (kg)", "Front L Motor (kg)", "Front R Motor (kg)"]),
+    ("Rigging",     ["Configuration", "Bumper", "# Motors", "Rigging Points", "Total Weight (kg)", "Front Motor (kg)", "Rear Motor (kg)", "Front L Motor (kg)", "Front R Motor (kg)"]),
     ("Position",    ["Position X (m)", "Position Y (m)"]),
     ("Orientation", ["Site (°)", "Azimuth (°)"]),
     ("Elevation",   ["Position Z (m)", "Bottom Elev. (m)", "Bottom Site (°)"]),
@@ -255,7 +258,7 @@ def write_excel(groups, output_path):
         ws.merge_cells(f"A{row}:G{row}")
         c = ws[f"A{row}"]
         c.value = f"Group: {group_name}"
-        c.font = Font(name="Arial", bold=True, color="FFFFFF", size=14)
+        c.font = Font(name="Arial", bold=True, color="F5A623", size=14)
         c.fill = HEADER_FILL; c.alignment = CENTER
         ws.row_dimensions[row].height = 30
         row += 2
@@ -269,13 +272,23 @@ def write_excel(groups, output_path):
             row += 1
             physical = source["physical"]
             if physical:
+                dark_fill = PatternFill("solid", start_color="1C1F26")
+                ws.merge_cells(f"A{row}:G{row}")
+                for col_idx in range(1, 8):
+                    ws.cell(row=row, column=col_idx).fill = dark_fill
+                c = ws[f"A{row}"]
+                c.value = "Physical Configuration"
+                c.font = Font(name="Arial", bold=True, color="F5A623", size=10)
+                c.alignment = LEFT
+                ws.row_dimensions[row].height = 18
+                row += 1
                 for group_label, items in grouped_physical_items(physical):
                     # Group sub-header
                     ws.merge_cells(f"A{row}:G{row}")
                     c = ws[f"A{row}"]
                     c.value = group_label
-                    c.font = Font(name="Arial", bold=True, color="2E75B6", size=9)
-                    c.fill = WHITE_FILL; c.alignment = LEFT
+                    c.font = Font(name="Arial", bold=True, color="F5A623", size=9)
+                    c.fill = SECTION_FILL; c.alignment = LEFT
                     ws.row_dimensions[row].height = 13
                     row += 1
                     for i in range(0, len(items), 2):
@@ -298,16 +311,19 @@ def write_excel(groups, output_path):
             enclosures = source["enclosures"]
             columns    = source["columns"]
             if enclosures:
+                dark_fill = PatternFill("solid", start_color="1C1F26")
                 ws.merge_cells(f"A{row}:G{row}")
+                for col_idx in range(1, 8):
+                    ws.cell(row=row, column=col_idx).fill = dark_fill
                 c = ws[f"A{row}"]
                 c.value = "Per-Enclosure Geometry"
-                c.font = Font(name="Arial", bold=True, color="1F3864", size=9)
-                c.fill = ALT_FILL; c.alignment = LEFT
+                c.font = Font(name="Arial", bold=True, color="F5A623", size=10)
+                c.alignment = LEFT
                 ws.row_dimensions[row].height = 15
                 row += 1
                 for col, h in enumerate(columns, 1):
                     c = ws.cell(row=row, column=col, value=h)
-                    c.font = Font(name="Arial", bold=True, color="FFFFFF", size=9)
+                    c.font = Font(name="Arial", bold=True, color="F5A623", size=9)
                     c.fill = ROW_FILL; c.alignment = CENTER; c.border = thin_border()
                 ws.row_dimensions[row].height = 15
                 row += 1
@@ -339,13 +355,14 @@ def write_pdf(groups, output_path):
                             leftMargin=20*mm, rightMargin=20*mm,
                             topMargin=20*mm, bottomMargin=20*mm)
 
-    NAVY  = colors.HexColor("#1F3864")
-    BLUE  = colors.HexColor("#2E75B6")
-    MBLUE = colors.HexColor("#4472C4")
-    LBLUE = colors.HexColor("#DCE6F1")
-    WHITE = colors.white
+    NAVY  = colors.HexColor("#282C34")
+    BLUE  = colors.HexColor("#3A3F4B")
+    MBLUE = colors.HexColor("#282C34")
+    LBLUE = colors.HexColor("#FAF3E0")
+    WHITE = colors.HexColor("#FAFAFA")
+    AMBER = colors.HexColor("#F5A623")
 
-    title_style   = ParagraphStyle("t",  fontSize=15, textColor=WHITE, fontName="Helvetica-Bold", leading=18)
+    title_style   = ParagraphStyle("t",  fontSize=15, textColor=colors.HexColor("#F5A623"), fontName="Helvetica-Bold", leading=18)
     source_style  = ParagraphStyle("s",  fontSize=11, textColor=WHITE, fontName="Helvetica-Bold", leading=14)
     section_style = ParagraphStyle("ss", fontSize=9,  textColor=NAVY,  fontName="Helvetica-Bold", leading=11)
     label_style   = ParagraphStyle("l",  fontSize=9,  textColor=NAVY,  fontName="Helvetica-Bold")
@@ -409,14 +426,14 @@ def write_pdf(groups, output_path):
                 enc_rows = [columns] + [[str(e.get(k, "")) for k in columns] for e in enclosures]
                 et = Table(enc_rows, colWidths=[col_w] * len(columns))
                 es = [("BACKGROUND",    (0,0), (-1,0),  MBLUE),
-                      ("TEXTCOLOR",     (0,0), (-1,0),  WHITE),
+                      ("TEXTCOLOR",     (0,0), (-1,0),  AMBER),
                       ("FONTNAME",      (0,0), (-1,0),  "Helvetica-Bold"),
                       ("FONTSIZE",      (0,0), (-1,-1), 8),
                       ("ALIGN",         (0,0), (-1,-1), "CENTER"),
                       ("GRID",          (0,0), (-1,-1), 0.5, colors.HexColor("#B0B0B0")),
                       ("TOPPADDING",    (0,0), (-1,-1), 3),
                       ("BOTTOMPADDING", (0,0), (-1,-1), 3)]
-                CARD_COLOR = colors.HexColor("#F4CCCC")
+                CARD_COLOR = colors.HexColor("#F9DCDC")
                 for i in range(1, len(enc_rows)):
                     is_cardioid = enclosures[i-1].get("Type", "").endswith("_C")
                     if is_cardioid:
