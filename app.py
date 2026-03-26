@@ -2,7 +2,7 @@ import streamlit as st
 import tempfile
 import pandas as pd
 from pathlib import Path
-from src.extract import extract_text, parse_document, write_excel, write_pdf
+from src.extract import extract_text, extract_metadata, parse_document, write_excel, write_pdf
 
 st.set_page_config(
     page_title="Soundvision Report Data Extractor",
@@ -54,6 +54,10 @@ if "groups" not in st.session_state:
     st.session_state.groups = None
 if "file_name" not in st.session_state:
     st.session_state.file_name = ""
+if "report_name" not in st.session_state:
+    st.session_state.report_name = ""
+if "report_date" not in st.session_state:
+    st.session_state.report_date = ""
 
 # Determine current step based on state
 if st.session_state.groups is None:
@@ -108,8 +112,11 @@ if uploaded_file and st.session_state.groups is None:
                 st.warning("⚠️ No flown sources found. The PDF may only contain stacked arrays, or may not be a valid Soundvision report.")
                 st.stop()
             st.write(f"Found **{len(groups)} group(s)** and **{total} source(s)**.")
+            name, date = extract_metadata(text)
             st.session_state.groups = groups
             st.session_state.file_name = uploaded_file.name
+            st.session_state.report_name = name
+            st.session_state.report_date = date
             status.update(label="Done!", state="complete")
             st.rerun()
         except Exception as e:
@@ -124,15 +131,16 @@ if st.session_state.groups:
 
     total = sum(len(s) for s in groups.values())
     st.success(f"✅ **{total} source(s)** extracted from **{len(groups)} group(s)**")
+    st.caption(f"📁 File: **{st.session_state.report_name}** · {st.session_state.report_date}")
 
     # Generate files
     with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp_xlsx:
         tmp_xlsx_path = Path(tmp_xlsx.name)
-    write_excel(groups, tmp_xlsx_path)
+    write_excel(groups, tmp_xlsx_path, report_name=st.session_state.report_name, report_date=st.session_state.report_date)
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_report:
         tmp_report_path = Path(tmp_report.name)
-    write_pdf(groups, tmp_report_path)
+    write_pdf(groups, tmp_report_path, report_name=st.session_state.report_name, report_date=st.session_state.report_date)
 
     # Download buttons first
     st.markdown("""
@@ -203,4 +211,4 @@ if st.session_state.groups:
 
 st.markdown("---")
 st.caption("ℹ️ Arrays L/R are mirrored — only one side is extracted per group.")
-st.markdown("<p style='font-size:14px; color:#888; text-align:center; margin-top: 48px; margin-bottom: 16px;'> · Built for internal purposes by Afonso Pires</p>", unsafe_allow_html=True)
+st.markdown("<p style='font-size:14px; color:#888; text-align:center; margin-top: 48px; margin-bottom: 16px;'>Built for internal purposes · Afonso Pires</p>", unsafe_allow_html=True)
