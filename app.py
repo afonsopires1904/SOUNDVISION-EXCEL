@@ -54,7 +54,7 @@ with st.expander("ℹ️ How does it work?"):
     - Extracts all flown arrays from the report — physical configuration, enclosure geometry and motor loads
     - Deduplicates L/R mirror arrays automatically — only one side is shown
     - Generates a structured Excel with one sheet per group, plus a **Report Info** page for you to fill in circuit assignments, amp IDs and channels
-    - Generates a PDF report with the same data, formatted for printing or sharing
+    - Generates a **PDF rigging reference** with physical configuration and enclosure geometry — no circuit or amp data (those are filled in the Excel after the fact)
 
     **What you need to do in the Excel:**
     - Fill in System Engineer, Company, Venue and Date on the Report Info sheet

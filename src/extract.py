@@ -390,6 +390,7 @@ def write_excel(groups, output_path, report_name="", report_date=""):
         ("Step 2 — Fill in your details", "Enter System Engineer, Company, Venue and Date in the yellow fields on the left."),
         ("Step 3 — Assign circuits", "In the System Summary table below, use the Circuit column dropdown (A–J) to assign each enclosure to an amplifier circuit.\n\nColour code: A=Brown  B=Red  C=Orange  D=Yellow  E=Green  F=Blue  G=Violet  H=Grey  I=White  J=Black"),
         ("Step 4 — Fill Amp IDs and channels", "Enter Amp ID L, Amp ID R and Amp Ch for each enclosure. These update automatically on the individual group sheets."),
+        ("About the PDF report", "The PDF is a rigging reference — it contains physical configuration and enclosure geometry only. Circuit assignments and amp data are Excel-only, as they are filled in after the fact."),
         ("Note — Screenshots", "The data table ends at column K. This instructions panel is intentionally placed here so it does not appear in screenshots of the data."),
     ]
 
@@ -595,13 +596,24 @@ def write_excel(groups, output_path, report_name="", report_date=""):
     # Columns in summary: Group(1), Source(2), Enc#(3), Type(4), Angle(5),
     #   Circuit(6), Panflex L(7), Panflex R(8), Amp ID L(9), Amp ID R(10), Amp Ch(11)
     USER_INPUT_COLS = {6, 9, 10, 11}  # Circuit, Amp ID L, Amp ID R, Amp Ch
+    GROUP_COLORS = [
+        "D6E4F0",  # soft blue
+        "D5F0E0",  # soft green
+        "E8D5F0",  # soft purple
+        "D5EEF0",  # soft teal
+        "F0D5EC",  # soft pink
+        "D5E8F0",  # soft sky
+        "E0F0D5",  # soft lime
+        "F0E8D5",  # soft peach
+    ]
     sum_headers = ["Group", "Source", "Enc #", "Type", "Angle (°)",
                    "Circuit", "Panflex L", "Panflex R", "Amp ID L", "Amp ID R", "Amp Ch"]
     _cover_enc_rows = {}  # key: "sheet__source__enc_idx" -> cover row
 
     sum_row = 11
-    for group_name, sources in groups.items():
+    for g_idx, (group_name, sources) in enumerate(groups.items()):
         sheet_name = re.sub(r'[\/*?:\[\]]', '', group_name)[:31]
+        group_color = PatternFill("solid", start_color=GROUP_COLORS[g_idx % len(GROUP_COLORS)])
 
         # Group banner
         cover.merge_cells(start_row=sum_row, start_column=1, end_row=sum_row, end_column=11)
@@ -687,7 +699,7 @@ def write_excel(groups, output_path, report_name="", report_date=""):
                     if col_idx in USER_INPUT_COLS:
                         c.fill = INPUT_FILL
                     elif col_idx <= 2:
-                        c.fill = WHITE_FILL
+                        c.fill = group_color
                     else:
                         c.fill = row_fill
                     c.border = thin_border()
@@ -856,9 +868,12 @@ def write_pdf(groups, output_path, report_name="", report_date=""):
             if enclosures:
                 story.append(banner("Per-Enclosure Geometry", section_style, colors.HexColor("#4A5060")))
                 story.append(Spacer(1, 1*mm))
-                col_w = 170*mm / len(columns)
-                enc_rows = [columns] + [[str(e.get(k, "")) for k in columns] for e in enclosures]
-                et = Table(enc_rows, colWidths=[col_w] * len(columns))
+                # PDF is a rigging reference — exclude user-input columns
+                pdf_exclude = {"Circuit", "Amp ID L", "Amp ID R", "Amp Ch"}
+                pdf_columns = [c for c in columns if c not in pdf_exclude]
+                col_w = 170*mm / len(pdf_columns)
+                enc_rows = [pdf_columns] + [[str(e.get(k, "")) for k in pdf_columns] for e in enclosures]
+                et = Table(enc_rows, colWidths=[col_w] * len(pdf_columns))
                 es = [("BACKGROUND",    (0,0), (-1,0),  MBLUE),
                       ("TEXTCOLOR",     (0,0), (-1,0),  AMBER),
                       ("FONTNAME",      (0,0), (-1,0),  "Helvetica-Bold"),
