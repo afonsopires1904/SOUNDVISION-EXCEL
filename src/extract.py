@@ -331,9 +331,88 @@ def write_excel(groups, output_path, report_name="", report_date=""):
 
     cover.merge_cells("A3:G3")
     cover["A3"].fill = PatternFill("solid", start_color="282C34")
+    cover.row_dimensions[3].height = 10
 
-    for col, width in zip("ABCDEFG", [22, 18, 4, 22, 18, 4, 12]):
+    # ── User input fields ─────────────────────────────────────────────────────
+    input_fields = [
+        ("System Engineer:", 4),
+        ("Company:",         5),
+        ("Venue:",           6),
+        ("Date:",            7),
+    ]
+    for label, r in input_fields:
+        lc = cover.cell(row=r, column=1, value=label)
+        lc.font = Font(name="Arial", bold=True, color="3A3F4B", size=10)
+        lc.fill = PatternFill("solid", start_color="E8E0D0")
+        lc.alignment = Alignment(horizontal="left", vertical="center")
+        lc.border = thin_border()
+        cover.merge_cells(start_row=r, start_column=2, end_row=r, end_column=5)
+        s_thin = Side(style="thin", color="B0B0B0")
+        s_black = Side(style="thin", color="000000")
+        for ci in range(2, 6):
+            cell = cover.cell(row=r, column=ci)
+            cell.fill = PatternFill("solid", start_color="FFF9E6")
+            cell.alignment = Alignment(horizontal="left", vertical="center")
+            left  = s_black if ci == 2 else Side(border_style=None)
+            right = s_black if ci == 5 else Side(border_style=None)
+            cell.border = Border(left=left, right=right, top=s_thin, bottom=s_thin)
+        cover.cell(row=r, column=2).value = ""
+        cover.cell(row=r, column=2).font = Font(name="Arial", size=10)
+        cover.row_dimensions[r].height = 18
+
+    # ── Summary section header ────────────────────────────────────────────────
+    cover.row_dimensions[8].height = 8
+    cover.merge_cells("A9:I9")
+    sh = cover["A9"]
+    sh.value = "System Summary"
+    sh.font = Font(name="Arial", bold=True, color="F5A623", size=11)
+    sh.fill = PatternFill("solid", start_color="282C34")
+    sh.alignment = Alignment(horizontal="left", vertical="center")
+    cover.row_dimensions[9].height = 22
+
+    for col, width in zip("ABCDEFGHIJK", [18, 14, 10, 10, 10, 8, 9, 9, 9, 9, 9]):
         cover.column_dimensions[col].width = width
+    cover.column_dimensions["L"].width = 3   # spacer
+    cover.column_dimensions["M"].width = 3   # spacer
+    cover.column_dimensions["N"].width = 3   # spacer
+    cover.column_dimensions["O"].width = 3   # spacer
+    cover.column_dimensions["P"].width = 55  # instructions
+
+    # ── Instructions panel (column P, far from data) ──────────────────────────
+    instr_title = cover.cell(row=1, column=16, value="📖 How to use this file")
+    instr_title.font = Font(name="Arial", bold=True, color="F5A623", size=11)
+    instr_title.fill = PatternFill("solid", start_color="282C34")
+    instr_title.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    cover.row_dimensions[1].height = 48
+
+    instructions = [
+        ("Step 1 — Review the data", "The Soundvision report has been automatically parsed. Each group (MAIN LR, OUTFILL, etc.) has its own sheet with physical config and enclosure geometry."),
+        ("Step 2 — Fill in your details", "Enter System Engineer, Company, Venue and Date in the yellow fields on the left."),
+        ("Step 3 — Assign circuits", "In the System Summary table below, use the Circuit column dropdown (A–J) to assign each enclosure to an amplifier circuit.\n\nColour code: A=Brown  B=Red  C=Orange  D=Yellow  E=Green  F=Blue  G=Violet  H=Grey  I=White  J=Black"),
+        ("Step 4 — Fill Amp IDs and channels", "Enter Amp ID L, Amp ID R and Amp Ch for each enclosure. These update automatically on the individual group sheets."),
+        ("Note — Screenshots", "The data table ends at column K. This instructions panel is intentionally placed here so it does not appear in screenshots of the data."),
+    ]
+
+    instr_row = 2
+    for title, body in instructions:
+        t = cover.cell(row=instr_row, column=16, value=title)
+        t.font = Font(name="Arial", bold=True, color="3A3F4B", size=9)
+        t.fill = PatternFill("solid", start_color="E8E0D0")
+        t.alignment = Alignment(horizontal="left", vertical="center")
+        t.border = thin_border()
+        cover.row_dimensions[instr_row].height = 14
+        instr_row += 1
+
+        b = cover.cell(row=instr_row, column=16, value=body)
+        b.font = Font(name="Arial", size=9)
+        b.fill = WHITE_FILL
+        b.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+        b.border = thin_border()
+        cover.row_dimensions[instr_row].height = 70 if "Colour code" in body else 45
+        instr_row += 1
+
+    # ── Group sheets (populate _enc_start_rows first) ─────────────────────────
+    _enc_start_rows = {}
     for group_name, sources in groups.items():
         sheet_name = re.sub(r'[\\/*?:\[\]]', '', group_name)[:31]
         ws = wb.create_sheet(title=sheet_name)
@@ -458,6 +537,7 @@ def write_excel(groups, output_path, report_name="", report_date=""):
                         ws.cell(row=row, column=col).border = thin_border()
                 ws.row_dimensions[row].height = 13
                 row += 1
+                _enc_start_rows[f"{sheet_name}__{source['name']}"] = row
                 for idx, enc in enumerate(enclosures):
                     is_cardioid = enc.get("Type", "").endswith("_C")
                     if is_cardioid:
@@ -508,160 +588,170 @@ def write_excel(groups, output_path, report_name="", report_date=""):
         # A-F keep the physical config widths set above
         for col, width in [("G", 9), ("H", 9), ("I", 9)]:
             ws.column_dimensions[col].width = width
-    # ── Summary sheet ─────────────────────────────────────────────────────────
-    ws = wb.create_sheet(title="Summary")
-    ws.sheet_view.showGridLines = False
-    ws.page_setup.fitToPage = True
-    ws.page_setup.fitToWidth = 1
-    ws.page_setup.fitToHeight = 0
+        # Also fix column C width for Angle on group sheets
+        ws.column_dimensions["C"].width = 10
 
-    S_HEADER = Font(name="Arial", bold=True, color="F5A623", size=10)
-    S_GROUP  = Font(name="Arial", bold=True, color="FFFFFF", size=9)
-    S_SUBHD  = Font(name="Arial", bold=True, color="F5A623", size=8)
-    S_LABEL  = Font(name="Arial", bold=True, color="3A3F4B", size=7)
-    S_BODY   = Font(name="Arial", size=7)
-    S_SMALL  = Font(name="Arial", color="777777", size=7, italic=True)
-    C        = Alignment(horizontal="center", vertical="center")
-    L        = Alignment(horizontal="left",   vertical="center")
+    # ── Fill cover summary — user-input cols editable, rest static ─────────────
+    # Columns in summary: Group(1), Source(2), Enc#(3), Type(4), Angle(5),
+    #   Circuit(6), Panflex L(7), Panflex R(8), Amp ID L(9), Amp ID R(10), Amp Ch(11)
+    USER_INPUT_COLS = {6, 9, 10, 11}  # Circuit, Amp ID L, Amp ID R, Amp Ch
+    sum_headers = ["Group", "Source", "Enc #", "Type", "Angle (°)",
+                   "Circuit", "Panflex L", "Panflex R", "Amp ID L", "Amp ID R", "Amp Ch"]
+    _cover_enc_rows = {}  # key: "sheet__source__enc_idx" -> cover row
 
-    row = 1
-
-    # Report title
-    ws.merge_cells(f"A{row}:J{row}")
-    c = ws[f"A{row}"]
-    c.value = report_name or "Soundvision Report"
-    c.font = S_HEADER
-    c.fill = PatternFill("solid", start_color="282C34")
-    c.alignment = L
-    ws.row_dimensions[row].height = 20
-    row += 1
-
-    ws.merge_cells(f"A{row}:J{row}")
-    c = ws[f"A{row}"]
-    c.value = f"Date: {report_date}" if report_date else ""
-    c.font = S_SMALL
-    c.fill = PatternFill("solid", start_color="282C34")
-    c.alignment = L
-    ws.row_dimensions[row].height = 12
-    row += 2
-
+    sum_row = 11
     for group_name, sources in groups.items():
+        sheet_name = re.sub(r'[\/*?:\[\]]', '', group_name)[:31]
+
         # Group banner
-        ws.merge_cells(f"A{row}:J{row}")
-        c = ws[f"A{row}"]
-        c.value = f"Group: {group_name}"
-        c.font = S_GROUP
-        c.fill = PatternFill("solid", start_color="282C34")
-        c.alignment = L
-        ws.row_dimensions[row].height = 16
-        row += 1
+        cover.merge_cells(start_row=sum_row, start_column=1, end_row=sum_row, end_column=11)
+        gh = cover.cell(row=sum_row, column=1, value=f"Group: {group_name}")
+        gh.font = Font(name="Arial", bold=True, color="F5A623", size=9)
+        gh.fill = PatternFill("solid", start_color="282C34")
+        gh.alignment = Alignment(horizontal="left", vertical="center")
+        for ci in range(1, 12):
+            cover.cell(row=sum_row, column=ci).border = thin_border()
+        cover.row_dimensions[sum_row].height = 14
+        sum_row += 1
 
         for source in sources:
-            # Source name
-            ws.merge_cells(f"A{row}:J{row}")
-            c = ws[f"A{row}"]
-            c.value = source["name"]
-            c.font = Font(name="Arial", bold=True, color="FFFFFF", size=8)
-            c.fill = PatternFill("solid", start_color="3A3F4B")
-            c.alignment = L
-            ws.row_dimensions[row].height = 14
-            row += 1
+            # Source sub-header
+            cover.merge_cells(start_row=sum_row, start_column=1, end_row=sum_row, end_column=11)
+            sh = cover.cell(row=sum_row, column=1, value=source["name"])
+            sh.font = Font(name="Arial", bold=True, color="FFFFFF", size=8)
+            sh.fill = PatternFill("solid", start_color="3A3F4B")
+            sh.alignment = Alignment(horizontal="left", vertical="center")
+            for ci in range(1, 12): cover.cell(row=sum_row, column=ci).border = thin_border()
+            cover.row_dimensions[sum_row].height = 12
+            sum_row += 1
 
-            # Physical config compact (two columns of key-value)
-            physical = source["physical"]
-            if physical:
-                items = list(physical.items())
-                for i in range(0, len(items), 2):
-                    fill = ALT_FILL if (row % 2 == 0) else WHITE_FILL
-                    for offset, idx2 in enumerate([i, i + 1]):
-                        if idx2 >= len(items): break
-                        key, val = items[idx2]
-                        col_l = offset * 2 + 1
-                        lc = ws.cell(row=row, column=col_l, value=key)
-                        lc.font = S_LABEL; lc.alignment = L
-                        lc.fill = fill; lc.border = thin_border()
-                        vc = ws.cell(row=row, column=col_l + 1, value=val)
-                        vc.font = S_BODY; vc.alignment = L
-                        vc.fill = fill; vc.border = thin_border()
-                    ws.row_dimensions[row].height = 11
-                    row += 1
-                row += 1
+            # Physical config compact
+            phys_items = list(source["physical"].items())
+            for i in range(0, len(phys_items), 2):
+                fill = ALT_FILL if (sum_row % 2 == 0) else WHITE_FILL
+                for offset, idx2 in enumerate([i, i+1]):
+                    if idx2 >= len(phys_items): break
+                    k, v = phys_items[idx2]
+                    col_l = offset * 4 + 1
+                    lc = cover.cell(row=sum_row, column=col_l, value=k)
+                    lc.font = Font(name="Arial", bold=True, color="3A3F4B", size=7)
+                    lc.fill = fill; lc.alignment = Alignment(horizontal="left", vertical="center")
+                    lc.border = thin_border()
+                    vc = cover.cell(row=sum_row, column=col_l+1, value=str(v))
+                    vc.font = Font(name="Arial", size=7)
+                    vc.fill = fill; vc.alignment = Alignment(horizontal="left", vertical="center")
+                    vc.border = thin_border()
+                    cover.merge_cells(start_row=sum_row, start_column=col_l+1,
+                                      end_row=sum_row, end_column=col_l+2)
+                cover.row_dimensions[sum_row].height = 11
+                sum_row += 1
+            sum_row += 1  # spacer after physical config
 
-            # Enclosure table
+            enclosures = source["enclosures"]
+            if not enclosures:
+                continue
+
+            # Column headers
+            for col_idx, h in enumerate(sum_headers, 1):
+                c = cover.cell(row=sum_row, column=col_idx, value=h)
+                c.font = Font(name="Arial", bold=True, color="F5A623", size=9)
+                c.fill = PatternFill("solid", start_color="282C34")
+                c.alignment = Alignment(horizontal="center", vertical="center")
+                c.border = thin_border()
+            cover.row_dimensions[sum_row].height = 14
+            sum_row += 1
+
+            # Enclosure rows
+            for enc_idx, enc in enumerate(enclosures):
+                is_cardioid = enc.get("Type", "").endswith("_C")
+                row_fill = CARD_FILL if is_cardioid else (
+                    ALT_FILL if enc_color_index(enc_idx, enclosures) == 0 else WHITE_FILL
+                )
+                static_vals = [
+                    group_name,
+                    source["name"],
+                    enc.get("Enc #", ""),
+                    enc.get("Type", ""),
+                    enc.get("Angle (°)", ""),
+                    "",   # Circuit — user input
+                    enc.get("Panflex L", ""),
+                    enc.get("Panflex R", ""),
+                    "",   # Amp ID L — user input
+                    "",   # Amp ID R — user input
+                    "",   # Amp Ch — user input
+                ]
+                for col_idx, val in enumerate(static_vals, 1):
+                    c = cover.cell(row=sum_row, column=col_idx, value=val)
+                    c.font = Font(name="Arial", size=9)
+                    c.alignment = Alignment(horizontal="center", vertical="center")
+                    if col_idx in USER_INPUT_COLS:
+                        c.fill = INPUT_FILL
+                    elif col_idx <= 2:
+                        c.fill = WHITE_FILL
+                    else:
+                        c.fill = row_fill
+                    c.border = thin_border()
+                cover.row_dimensions[sum_row].height = 13
+
+                # Track this cover row for back-referencing from group sheets
+                _cover_enc_rows[f"{sheet_name}__{source['name']}__{enc_idx}"] = sum_row
+                sum_row += 1
+
+        sum_row += 1  # spacer between groups
+
+    # Add dropdown + conditional formatting on Circuit col in cover
+    if any(_cover_enc_rows.values()):
+        all_cover_rows = list(_cover_enc_rows.values())
+        min_r, max_r = min(all_cover_rows), max(all_cover_rows)
+        circuit_range = f"F{min_r}:F{max_r}"
+        dv_cover = DataValidation(type="list", formula1='"A,B,C,D,E,F,G,H,I,J"', allow_blank=True)
+        cover.add_data_validation(dv_cover)
+        dv_cover.add(circuit_range)
+        for letter, hex_color in CIRCUIT_COLORS.items():
+            cover.conditional_formatting.add(circuit_range, CellIsRule(
+                operator="equal",
+                formula=[f'"{letter}"'],
+                fill=PatternFill("solid", start_color=hex_color, end_color=hex_color)
+            ))
+
+    # ── Back-fill group sheets: replace user-input cols with formulas to cover ─
+    for group_name, sources in groups.items():
+        sheet_name = re.sub(r'[\/*?:\[\]]', '', group_name)[:31]
+        ws = wb[sheet_name]
+        for source in sources:
             enclosures = source["enclosures"]
             columns    = source["columns"]
-            if enclosures:
-                # Sub-header
-                ws.merge_cells(f"A{row}:J{row}")
-                c = ws[f"A{row}"]
-                c.value = "Per-Enclosure Geometry"
-                c.font = S_SUBHD
-                c.fill = PatternFill("solid", start_color="4A5060")
-                c.alignment = L
-                ws.row_dimensions[row].height = 12
-                row += 1
+            if not enclosures:
+                continue
+            enc_start = _enc_start_rows.get(f"{sheet_name}__{source['name']}", None)
+            if enc_start is None:
+                continue
 
-                # Two-row grouped headers (same as main sheets)
-                sum_group_headers = {
-                    "Panflex L": "Panflex", "Panflex R": "Panflex",
-                    "Amp ID L":  "Amp ID",  "Amp ID R":  "Amp ID",
-                }
-                written_sum_groups = set()
-                for col, h in enumerate(columns, 1):
-                    grp = sum_group_headers.get(h)
-                    if grp and grp not in written_sum_groups:
-                        r_key = h.replace(" L", " R")
-                        r_col = columns.index(r_key) + 1 if r_key in columns else col
-                        ws.merge_cells(start_row=row, start_column=col, end_row=row, end_column=r_col)
-                        c = ws.cell(row=row, column=col, value=grp)
-                        c.font = Font(name="Arial", bold=True, color="F5A623", size=7)
-                        c.fill = PatternFill("solid", start_color="282C34")
-                        c.alignment = C; c.border = thin_border()
-                        written_sum_groups.add(grp)
-                    elif not grp:
-                        ws.merge_cells(start_row=row, start_column=col, end_row=row+1, end_column=col)
-                        c = ws.cell(row=row, column=col, value=h)
-                        c.font = Font(name="Arial", bold=True, color="F5A623", size=7)
-                        c.fill = PatternFill("solid", start_color="282C34")
-                        c.alignment = C; c.border = thin_border()
-                ws.row_dimensions[row].height = 10
-                row += 1
-                for col, h in enumerate(columns, 1):
-                    if h in sum_group_headers:
-                        label = "L" if h.endswith(" L") else "R"
-                        c = ws.cell(row=row, column=col, value=label)
-                        c.font = Font(name="Arial", bold=True, color="F5A623", size=7)
-                        c.fill = PatternFill("solid", start_color="282C34")
-                        c.alignment = C; c.border = thin_border()
-                    else:
-                        ws.cell(row=row, column=col).border = thin_border()
-                ws.row_dimensions[row].height = 10
-                row += 1
+            # Map column name to cover sheet column letter
+            cover_col_map = {
+                "Circuit":  "F",
+                "Amp ID L": "I",
+                "Amp ID R": "J",
+                "Amp Ch":   "K",
+            }
 
-                for enc_idx, enc in enumerate(enclosures):
-                    is_cardioid = enc.get("Type", "").endswith("_C")
-                    if is_cardioid:
-                        row_fill = CARD_FILL
-                    else:
-                        row_fill = ALT_FILL if enc_color_index(enc_idx, enclosures) == 0 else WHITE_FILL
-                    for col, key in enumerate(columns, 1):
-                        fill = INPUT_FILL if key in ("Amp ID L", "Amp ID R", "Amp Ch") else row_fill
-                        c = ws.cell(row=row, column=col, value=enc.get(key, ""))
-                        c.font = S_BODY; c.alignment = C
-                        c.fill = fill; c.border = thin_border()
-                    ws.row_dimensions[row].height = 11
-                    row += 1
-
-            row += 1  # spacer between sources
-
-        row += 1  # spacer between groups
-
-    # Column widths for summary sheet
-    sum_widths = [8, 12, 10, 9, 9, 9, 9, 9, 9, 9]
-    for i, width in enumerate(sum_widths, 1):
-        ws.column_dimensions[get_column_letter(i)].width = width
+            for enc_idx, enc in enumerate(enclosures):
+                ws_row = enc_start + enc_idx
+                cover_row = _cover_enc_rows.get(f"{sheet_name}__{source['name']}__{enc_idx}")
+                if cover_row is None:
+                    continue
+                for col_idx, key in enumerate(columns, 1):
+                    if key in cover_col_map:
+                        cover_col = cover_col_map[key]
+                        c = ws.cell(row=ws_row, column=col_idx)
+                        c.value = f"='Report Info'!{cover_col}{cover_row}"
+                        c.fill = INPUT_FILL
+                        c.font = BODY_FONT
+                        c.alignment = CENTER
+                        c.border = thin_border()
 
     wb.save(output_path)
+
 
 def write_pdf(groups, output_path, report_name="", report_date=""):
     from reportlab.lib.pagesizes import A4

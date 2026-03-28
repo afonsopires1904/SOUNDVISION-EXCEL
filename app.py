@@ -45,6 +45,25 @@ with col2:
     </div>
     """, unsafe_allow_html=True)
 
+# ── How it works expander ────────────────────────────────────────────────────
+with st.expander("ℹ️ How does it work?"):
+    st.markdown("""
+    **Soundvision Report Data Extractor** parses L-Acoustics Soundvision PDF exports and generates formatted Excel and PDF reports — ready to share with your team.
+
+    **What it does:**
+    - Extracts all flown arrays from the report — physical configuration, enclosure geometry and motor loads
+    - Deduplicates L/R mirror arrays automatically — only one side is shown
+    - Generates a structured Excel with one sheet per group, plus a **Report Info** page for you to fill in circuit assignments, amp IDs and channels
+    - Generates a PDF report with the same data, formatted for printing or sharing
+
+    **What you need to do in the Excel:**
+    - Fill in System Engineer, Company, Venue and Date on the Report Info sheet
+    - Assign circuits (A–J) to each enclosure — colours follow the resistor colour code
+    - Enter Amp ID L/R and Amp Channel — these update automatically across all group sheets
+
+    > 📌 Supported speakers: K1, K2, K3, KARA II, KIVA II, KS28, SB28, X8 and mixed arrays.
+    """)
+
 # ── Session state ─────────────────────────────────────────────────────────────
 for key, default in [("groups", None), ("file_name", ""), ("report_name", ""), ("report_date", "")]:
     if key not in st.session_state:
@@ -78,7 +97,8 @@ st.markdown(f"""
 
 # ── Upload ────────────────────────────────────────────────────────────────────
 if st.session_state.groups is None:
-    uploaded_file = st.file_uploader("⚠️ One report at a time — upload a single Soundvision PDF export.", type="pdf")
+    uploaded_file = st.file_uploader("Upload your Soundvision PDF", type="pdf", label_visibility="collapsed")
+    st.caption("📄 Only Soundvision PDF exports are supported.")
 else:
     uploaded_file = None
 
