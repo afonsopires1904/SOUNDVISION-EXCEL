@@ -338,6 +338,13 @@ def write_excel(groups, output_path, report_name="", report_date=""):
         sheet_name = re.sub(r'[\\/*?:\[\]]', '', group_name)[:31]
         ws = wb.create_sheet(title=sheet_name)
         ws.sheet_view.showGridLines = False
+        # Physical config label columns (A, D) and value columns (B+C, E+F)
+        ws.column_dimensions["A"].width = 22
+        ws.column_dimensions["B"].width = 20
+        ws.column_dimensions["C"].width = 4
+        ws.column_dimensions["D"].width = 22
+        ws.column_dimensions["E"].width = 20
+        ws.column_dimensions["F"].width = 4
         row = 1
         # Report name on its own row above the group title
         ws.merge_cells(f"A{row}:G{row}")
@@ -497,18 +504,9 @@ def write_excel(groups, output_path, report_name="", report_date=""):
             ws.row_breaks.append(Break(id=row))
             row += 2
         # Col map: Enc#, Type, Angle, PanflexL, PanflexR, AmpIDL, AmpIDR, AmpCh
-        col_widths = {
-            "A": 8,   # Enc #
-            "B": 14,  # Type
-            "C": 10,  # Angle (°)
-            "D": 8,   # Circuit
-            "E": 9,   # Panflex L
-            "F": 9,   # Panflex R
-            "G": 9,   # Amp ID L
-            "H": 9,   # Amp ID R
-            "I": 9,   # Amp Ch
-        }
-        for col, width in col_widths.items():
+        # Enclosure table columns — only set G, H, I (Amp cols)
+        # A-F keep the physical config widths set above
+        for col, width in [("G", 9), ("H", 9), ("I", 9)]:
             ws.column_dimensions[col].width = width
     # ── Summary sheet ─────────────────────────────────────────────────────────
     ws = wb.create_sheet(title="Summary")
